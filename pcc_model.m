@@ -1,16 +1,18 @@
 clear; close all;
+addpath("functions");
 
 % 常数参量
 N = 2; % PCC段数
 g = 9.81; % NED坐标系
 
-M = 0.4;                                % 软臂总质量 (kg)
-L0 = 1.0;                               % 软臂总长度 (m)
-R = 0.0275;                             % 半径 (m)
+M_i = 0.2;                              % 软臂每节质量 (kg)
+L_i_0 = 0.5;                            % 软臂每节原长 (m)
+I_i_local = diag([0.002, 0.002, 1e-4]); % 软臂每节惯性矩
+R = 0.0275;                             % 软臂半径 (m)
 Me = 0.1;                               % 末端负载 (kg)
-Ie_local = diag([1e-4, 1e-4, 1e-4]);    % 负载在其自身质心系的惯量
+Ie_local = diag([1e-4, 1e-4, 1e-4]);    % 负载惯性矩
 k_theta = 1.2;                          % 弯曲刚度 (N*m/rad)
-k_l = 5;                                % 伸缩刚度 (N/m)
+k_l = 10;                               % 伸缩刚度 (N/m)
 d_theta = 0.5;                          % 弯曲阻尼 (N*m*s/rad)
 d_l = 5.0;                              % 轴向阻尼 (N*s/m)
 d_phi = 0.1;                            % 扭转/方位角阻尼 (N*m*s/rad)
@@ -38,7 +40,7 @@ L3 = 0;
 
 for i=1:N
     H_i = pcc_homogeneous(theta(i),phi(i),l(i));    % H^{i-1}_i
-    H_com_i_local = pcc_homogeneous(theta(i), phi(i), l(i)/2); % 中心（视为质心）齐次变换
+    H_com_i_local = pcc_homogeneous(theta(i)/2, phi(i), l(i)/2); % 中心（视为质心）齐次变换
 
     if i==1
         H_0(:,:,i) = H_i;
@@ -78,8 +80,15 @@ J_full_end = [Jv_end; Jw_end];
 % 修正总动能 (包含机械臂各段 + 末端负载)
 K_total = 0;
 for i = 1:N
-    % 简化：假设每段质量分布均匀，质心在 PCC 弧线中点
-    K_total = K_total + 0.5 * (M/N) * (dotQ' * (Jv_com(:,:,i)' * Jv_com(:,:,i)) * dotQ);
+    % 1. 平动动能 (使用质心雅可比)
+    K_trans = 0.5 * M_i * (dotQ' * (Jv_com(:,:,i)' * Jv_com(:,:,i)) * dotQ);
+    
+    % 2. 转动动能
+    R_i = H_0_com(1:3, 1:3, i); % 当前段质心处的旋转矩阵
+    I_i_base = R_i * I_i_local * R_i'; 
+    K_rot = 0.5 * (dotQ' * Jw(:,:,i)' * I_i_base * Jw(:,:,i) * dotQ);
+    
+    K_total = K_total + K_trans + K_rot;
 end
 R_end = H_0(1:3, 1:3, N);
 Ie_base = R_end * Ie_local * R_end'; % 变换到基坐标系
@@ -90,14 +99,14 @@ K_sum = K_total + K_load;
 % 修正总势能 (重力 + TPU 弹性能)
 P_gravity = 0;
 for i = 1:N
-    P_gravity = P_gravity - (M/N) * g * H_0_com(3,4,i);
+    P_gravity = P_gravity - M_i * g * H_0_com(3,4,i);
 end
 P_load = - Me * g * H_0(3,4,N);
 P_elastic = 0;
 for i = 1:N
     % 弹性势能模型：弯曲 theta 和 伸缩 l 的回复力
     P_elastic = P_elastic + 0.5 * k_theta * theta(i)^2 + ...
-                            0.5 * k_l * (l(i) - L0/N)^2;
+                            0.5 * k_l * (l(i) - L_i_0)^2;
 end
 P_sum = P_gravity + P_load + P_elastic;
 
@@ -114,24 +123,34 @@ D_Matrix = diag(repmat([d_theta, d_phi, d_l], 1, N)) * dotQ;
 % 科里奥利项 C(q, dotQ)
 disp('正在计算科里奥利项...');
 
-% 初始化 C 矩阵 (3N x 3N)
-num_q = 3*N;
-C_mat = sym(zeros(num_q, num_q));
+% % 初始化 C 矩阵 (3N x 3N)
+% C_mat = sym(zeros(size(q,1), size(q,1)));
+% 
+% % 使用 Christoffel 符号计算: C_kj = sum_i( 0.5 * (dM_kj/dqi + dM_ki/dqj - dM_ij/dqk) * dotQi )
+% for k = 1:size(q,1)
+%     for j = 1:size(q,1)
+%         for i = 1:size(q,1)
+%             term = 0.5 * (diff(Mass_Matrix(k,j), q(i)) + ...
+%                           diff(Mass_Matrix(k,i), q(j)) - ...
+%                           diff(Mass_Matrix(i,j), q(k)));
+%             C_mat(k,j) = C_mat(k,j) + term * dotQ(i);
+%         end
+%     end
+% end
+% 
+% % 计算 C * dotQ 向量
+% C_vector = simplify(C_mat * dotQ);
 
-% 使用 Christoffel 符号计算: C_kj = sum_i( 0.5 * (dM_kj/dqi + dM_ki/dqj - dM_ij/dqk) * dotQi )
-for k = 1:num_q
-    for j = 1:num_q
-        for i = 1:num_q
-            term = 0.5 * (diff(Mass_Matrix(k,j), q(i)) + ...
-                          diff(Mass_Matrix(k,i), q(j)) - ...
-                          diff(Mass_Matrix(i,j), q(k)));
-            C_mat(k,j) = C_mat(k,j) + term * dotQ(i);
-        end
-    end
+% 拉格朗日恒等式法
+% C(q,dq)dq = dM*dq-\partial(1/2 dq' M dq)/\partial q
+G_kinetic = jacobian(K_sum, q)'; % d/dq (1/2 * dq' * M * dq)
+
+dotM_dq = sym(zeros(size(q,1), 1));
+for i = 1:size(q,1)
+    dotM_dq = dotM_dq + diff(Mass_Matrix, q(i)) * dotQ(i) * dotQ;
 end
 
-% 计算 C * dotQ 向量
-C_vector = simplify(C_mat * dotQ);
+C_vector = simplify(dotM_dq - G_kinetic);
 
 % 广义力映射
 % Ja 是绳索拉力 T 到关节空间的映射 (3x3N)
@@ -146,12 +165,20 @@ disp('正在导出函数文件...');
 % 合力
 % Total_Bias = C(q,dq)*dq + G_K(q) + D*dq - Tau_rope - Tau_ext
 Total_Bias = C_vector + G_K_Matrix + D_Matrix - Tau_rope - Tau_ext;
+Total_Bias_wo_Cori = G_K_Matrix + D_Matrix - Tau_rope - Tau_ext;
+
+if not(isfolder('output'))
+    mkdir 'output';
+end
 
 % 导出质量矩阵
-matlabFunction(Mass_Matrix, 'File', 'get_MassMatrix', 'Optimize', true, 'Vars', {q});
+matlabFunction(Mass_Matrix, 'File', 'output/get_MassMatrix', 'Vars', {q});
 
 % 导出偏移力项 (包含科里奥利力、重力、弹性、阻尼及外力)
-matlabFunction(Total_Bias, 'File', 'get_BiasForce', 'Optimize', true, ...
+matlabFunction(Total_Bias, 'File', 'output/get_BiasForce', ...
+    'Vars', {q, dotQ, T1, T2, T3, fx, fy, fz, mx, my, mz});
+
+matlabFunction(Total_Bias_wo_Cori, 'File', 'output/get_BiasForceWoCori', ...
     'Vars', {q, dotQ, T1, T2, T3, fx, fy, fz, mx, my, mz});
 
 disp('导出完成！');
