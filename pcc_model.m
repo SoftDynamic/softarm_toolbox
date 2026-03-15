@@ -10,12 +10,12 @@ L_i_0 = 0.5;                            % 软臂每节原长 (m)
 I_i_local = diag([0.002, 0.002, 1e-4]); % 软臂每节惯性矩
 R = 0.0275;                             % 软臂半径 (m)
 Me = 0.1;                               % 末端负载 (kg)
-Ie_local = diag([1e-4, 1e-4, 1e-4]);    % 负载惯性矩
+Ie_local = diag([1e-2, 1e-2, 1e-2]);    % 负载惯性矩
 k_theta = 1.2;                          % 弯曲刚度 (N*m/rad)
-k_l = 10;                               % 伸缩刚度 (N/m)
-d_theta = 0.5;                          % 弯曲阻尼 (N*m*s/rad)
-d_l = 5.0;                              % 轴向阻尼 (N*s/m)
-d_phi = 0.1;                            % 扭转/方位角阻尼 (N*m*s/rad)
+k_l = 50;                               % 伸缩刚度 (N/m)
+d_theta = 50.0;                          % 弯曲阻尼 (N*m*s/rad)
+d_l = 10.0;                              % 轴向阻尼 (N*s/m)
+d_phi = 10.0;                            % 扭转/方位角阻尼 (N*m*s/rad)
 
 % 符号变量
 syms theta phi l dotTheta dotPhi dotL [1 N] real % 广义坐标
@@ -123,34 +123,24 @@ D_Matrix = diag(repmat([d_theta, d_phi, d_l], 1, N)) * dotQ;
 % 科里奥利项 C(q, dotQ)
 disp('正在计算科里奥利项...');
 
-% % 初始化 C 矩阵 (3N x 3N)
-% C_mat = sym(zeros(size(q,1), size(q,1)));
-% 
-% % 使用 Christoffel 符号计算: C_kj = sum_i( 0.5 * (dM_kj/dqi + dM_ki/dqj - dM_ij/dqk) * dotQi )
-% for k = 1:size(q,1)
-%     for j = 1:size(q,1)
-%         for i = 1:size(q,1)
-%             term = 0.5 * (diff(Mass_Matrix(k,j), q(i)) + ...
-%                           diff(Mass_Matrix(k,i), q(j)) - ...
-%                           diff(Mass_Matrix(i,j), q(k)));
-%             C_mat(k,j) = C_mat(k,j) + term * dotQ(i);
-%         end
-%     end
-% end
-% 
-% % 计算 C * dotQ 向量
-% C_vector = simplify(C_mat * dotQ);
+% 初始化 C 矩阵 (3N x 3N)
+C_mat = sym(zeros(size(q,1), size(q,1)));
 
-% 拉格朗日恒等式法
-% C(q,dq)dq = dM*dq-\partial(1/2 dq' M dq)/\partial q
-G_kinetic = jacobian(K_sum, q)'; % d/dq (1/2 * dq' * M * dq)
-
-dotM_dq = sym(zeros(size(q,1), 1));
-for i = 1:size(q,1)
-    dotM_dq = dotM_dq + diff(Mass_Matrix, q(i)) * dotQ(i) * dotQ;
+% 使用 Christoffel 符号计算: C_kj = sum_i( 0.5 * (dM_kj/dqi + dM_ki/dqj - dM_ij/dqk) * dotQi )
+for k = 1:size(q,1)
+    for j = 1:size(q,1)
+        for i = 1:size(q,1)
+            term = 0.5 * (diff(Mass_Matrix(k,j), q(i)) + ...
+                          diff(Mass_Matrix(k,i), q(j)) - ...
+                          diff(Mass_Matrix(i,j), q(k)));
+            C_mat(k,j) = C_mat(k,j) + term * dotQ(i);
+        end
+    end
 end
 
-C_vector = simplify(dotM_dq - G_kinetic);
+% 计算 C * dotQ 向量
+C_vector = simplify(C_mat * dotQ);
+% C_vector = 0;
 
 % 广义力映射
 % Ja 是绳索拉力 T 到关节空间的映射 (3x3N)
@@ -164,8 +154,8 @@ disp('正在导出函数文件...');
 
 % 合力
 % Total_Bias = C(q,dq)*dq + G_K(q) + D*dq - Tau_rope - Tau_ext
-Total_Bias = C_vector + G_K_Matrix + D_Matrix - Tau_rope - Tau_ext;
-Total_Bias_wo_Cori = G_K_Matrix + D_Matrix - Tau_rope - Tau_ext;
+% Total_Bias = C_vector + G_K_Matrix + D_Matrix - Tau_rope - Tau_ext;
+
 
 if not(isfolder('output'))
     mkdir 'output';
@@ -175,10 +165,15 @@ end
 matlabFunction(Mass_Matrix, 'File', 'output/get_MassMatrix', 'Vars', {q});
 
 % 导出偏移力项 (包含科里奥利力、重力、弹性、阻尼及外力)
-matlabFunction(Total_Bias, 'File', 'output/get_BiasForce', ...
-    'Vars', {q, dotQ, T1, T2, T3, fx, fy, fz, mx, my, mz});
-
-matlabFunction(Total_Bias_wo_Cori, 'File', 'output/get_BiasForceWoCori', ...
-    'Vars', {q, dotQ, T1, T2, T3, fx, fy, fz, mx, my, mz});
+% matlabFunction(Total_Bias, 'File', 'output/get_BiasForce', ...
+%     'Vars', {q, dotQ, T1, T2, T3, fx, fy, fz, mx, my, mz});
+matlabFunction(G_K_Matrix, 'File', 'output/get_GKForce', ...
+    'Vars', {q});
+matlabFunction(D_Matrix, 'File', 'output/get_DampForce', ...
+    'Vars', {dotQ});
+matlabFunction(C_vector, 'File', 'output/get_Coriolis', ...
+    'Vars', {q,dotQ});
+matlabFunction( - Tau_rope - Tau_ext, 'File', 'output/get_ExtForce', ...
+    'Vars', {q, T1, T2, T3, fx, fy, fz, mx, my, mz});
 
 disp('导出完成！');
