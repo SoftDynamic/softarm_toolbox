@@ -13,9 +13,9 @@ Me = 0.1;                               % 末端负载 (kg)
 Ie_local = diag([1e-2, 1e-2, 1e-2]);    % 负载惯性矩
 k_theta = 1.2;                          % 弯曲刚度 (N*m/rad)
 k_l = 50;                               % 伸缩刚度 (N/m)
-d_theta = 50.0;                          % 弯曲阻尼 (N*m*s/rad)
-d_l = 10.0;                              % 轴向阻尼 (N*s/m)
-d_phi = 10.0;                            % 扭转/方位角阻尼 (N*m*s/rad)
+d_theta = 5.0;                          % 弯曲阻尼 (N*m*s/rad)
+d_l = 10.0;                             % 轴向阻尼 (N*s/m)
+d_phi = 10.0;                           % 扭转/方位角阻尼 (N*m*s/rad)
 
 % 符号变量
 syms theta phi l dotTheta dotPhi dotL [1 N] real % 广义坐标
