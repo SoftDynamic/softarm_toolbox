@@ -2,19 +2,19 @@ clear; close all;
 addpath("functions"); 
 
 %% 1. 参数定义
-N = 2;              % 段数
+N = 1;              % 段数
 g = 9.81;           % 重力加速度
-L0 = 1.0 / N;           % 每节固定长度 (m)
-R = 0.03;         % 驱动绳分布半径 (m)
-Me = 0.1;           % 末端质点质量 (kg)
-M = 0.3;            % 软臂质量
+% L0 = 1.0 / N;           % 每节固定长度 (m)
+% R = 0.03;         % 驱动绳分布半径 (m)
+% Me = 0.1;           % 末端质点质量 (kg)
+% M = 0.3;            % 软臂质量
 
 % % 刚度与阻尼
-EI = 1.2;           % 弯曲刚度 (N*m^2) -> k_theta = EI/L0
-d_x = 0.05;
-d_y = 0.05;
-% syms Me EI d_x d_y real
-Mi = M / N ;
+% EI = 1.2;           % 弯曲刚度 (N*m^2) -> k_theta = EI/L0
+% d_x = 0.05;
+% d_y = 0.05;
+syms L0 R Me EI d_x d_y real
+% Mi = M / N ;
 % sym_constants = {M, Me, EI, d_x, d_y};
 
 % 符号变量定义
@@ -106,20 +106,23 @@ end
 C_vector = simplify(C_mat * dotQ);
 
 % 4.7 动力学方程 \ddot{q} = M^{-1} * (Tau_rope + Tau_ext - C - G_K - D)
-
-disp('正在收集动力学方程...');
+% 绳索加速度约束 J_a * \ddot{q} + \dot{J_a}\dot{q} = u
 
 n_vec = C_vector + G_K_Matrix + D_Matrix; % 非线性项合并为 n(q, \dot{q})
-Tau_ext = Jv_end' * F_ext;
-A_mat = Ja * (Mass_Matrix \ Ja');
-Tau_rope = Ja' * (A_mat \ (u_acc - dotJa_dotQ + Ja * (Mass_Matrix \ n_vec) - Ja * (Mass_Matrix \ Tau_ext)));
 
-%% 5. 状态空间模型
+LHS = [Mass_Matrix, -Ja'; 
+       Ja,           zeros(2,2)];
+RHS = [Jv_end'*F_ext - n_vec;u_acc];
+
+% sol = LHS \ RHS; % [ddq; F_rope]
+sol = linsolve(LHS, RHS);
+
+ddq = sol(1:2*N);
 
 X = [q; dotQ];
-dotX = [dotQ; Mass_Matrix \ (Tau_rope + Tau_ext - n_vec)];
-dotX = simplify(dotX);
+dotX = [dotQ; ddq];
 
+% 线性化模型：dotX = Fx + Gx * u_acc + Hx * F_ext
 Gx = jacobian(dotX, u_acc);
 Hx = jacobian(dotX, F_ext);
 Fx = simplify(dotX - Gx * u_acc - Hx * F_ext);
