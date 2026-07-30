@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "softarm-toolbox"
+version = "0.1.0"
+description = "SymPy-first continuum robot modelling and MATLAB/Simulink code generation"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["sympy==1.14.0"]
+
+[project.optional-dependencies]
+dev = ["pytest==9.1.1"]
+wolfram = ["wolframclient==1.4.0"]
+
+[project.scripts]
+softarm = "softarm.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"softarm.backends" = ["*.wls"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

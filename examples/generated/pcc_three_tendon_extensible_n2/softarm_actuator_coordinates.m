@@ -1,0 +1,45 @@
+function y = softarm_actuator_coordinates(q,p)
+% Generated from the SymPy model. Do not edit.
+%#codegen
+bx1 = q(1);
+by1 = q(2);
+l1 = q(3);
+bx2 = q(4);
+by2 = q(5);
+l2 = q(6);
+s1_rest_length = p(1);
+s2_rest_length = p(2);
+s1_mass = p(3);
+s2_mass = p(4);
+s1_Ixx = p(5);
+s2_Ixx = p(6);
+s1_Iyy = p(7);
+s2_Iyy = p(8);
+s1_Izz = p(9);
+s2_Izz = p(10);
+s1_k_bx = p(11);
+s2_k_bx = p(12);
+s1_k_by = p(13);
+s2_k_by = p(14);
+s1_k_l = p(15);
+s2_k_l = p(16);
+s1_d_bx = p(17);
+s2_d_bx = p(18);
+s1_d_by = p(19);
+s2_d_by = p(20);
+s1_d_l = p(21);
+s2_d_l = p(22);
+gravity = p(23);
+tip_mass = p(24);
+tip_Ixx = p(25);
+tip_Iyy = p(26);
+tip_Izz = p(27);
+act_t1_s1_radius = p(28);
+act_t1_s2_radius = p(29);
+act_t2_s1_radius = p(30);
+act_t2_s2_radius = p(31);
+act_t3_s1_radius = p(32);
+act_t3_s2_radius = p(33);
+t0 = -l1 - l2;
+y = reshape([-act_t1_s1_radius.*bx1 - act_t1_s2_radius.*bx2 - t0;-act_t2_s1_radius.*(-0.49999999999999983*bx1 + 0.86602540378443874*by1) - act_t2_s2_radius.*(-0.49999999999999983*bx2 + 0.86602540378443874*by2) - t0;-act_t3_s1_radius.*(-0.50000000000000042*bx1 - 0.8660254037844384*by1) - act_t3_s2_radius.*(-0.50000000000000042*bx2 - 0.8660254037844384*by2) - t0],3,1);
+end

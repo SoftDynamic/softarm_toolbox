@@ -24,7 +24,7 @@ helpsearch*/
 # Code generation folders
 slprj/
 sccprj/
-codegen/
+/codegen/
 
 # Cache files
 *.slxc
@@ -41,3 +41,14 @@ codegen/
 
 # Output folder
 output/
+
+# Python build and test artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# Machine-local tool paths
+.softarm.local.toml
