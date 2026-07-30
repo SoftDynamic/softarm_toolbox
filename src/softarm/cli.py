@@ -21,6 +21,11 @@ def _parser() -> argparse.ArgumentParser:
     build.add_argument("--target", choices=("matlab",), default="matlab")
     build.add_argument("--out", required=True)
     build.add_argument("--wolfram-kernel")
+    build.add_argument(
+        "--tex-appendix",
+        action="store_true",
+        help="append CAS-optimized exact symbolic expressions to softarm_model.tex",
+    )
     validate = commands.add_parser("validate", help="validate a model configuration")
     validate.add_argument("config")
     inspect = commands.add_parser("inspect", help="print a generated bundle manifest")
@@ -50,7 +55,13 @@ def main(argv: list[str] | None = None) -> int:
         actuation = derive_actuation(plant)
         constraint = derive_constraint(plant)
         output = generate_matlab_bundle(
-            plant, args.out, args.backend, args.wolfram_kernel, actuation, constraint
+            plant,
+            args.out,
+            args.backend,
+            args.wolfram_kernel,
+            actuation,
+            constraint,
+            args.tex_appendix,
         )
         print(output)
         return 0

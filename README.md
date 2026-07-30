@@ -279,6 +279,35 @@ softarm build examples/config/pcc_distributed_n2.toml --backend wolfram --target
 softarm inspect build/pcc
 ```
 
+### LaTeX 数学文档
+
+每次 `softarm build` 都会在输出 bundle 中生成固定文件名
+`softarm_model.tex`。它是独立的英文 `article` 文档，与 MATLAB 代码共用同一个
+`SymbolicPlant`、`ActuationModel` 和 `ConstraintModel`，因此不是另一套手工维护的公式。
+正文按符号与参数、运动学、能量与动力学、执行器和约束分层组织；大型质量矩阵和偏置向量
+默认只以装配公式表示，适合人工核对并作为论文推导的起点。
+
+需要查看 CAS 生成的精确表达式时，使用：
+
+```shell
+softarm build examples/config/euler_ritz_n2.toml --target matlab --out build/euler --tex-appendix
+```
+
+`--tex-appendix` 会在同一文件末尾按输出块加入优化和 CSE 后的
+$V,D,M,h,H_e,J_e,B_v$，以及适用的执行器和约束表达式。大型浮动基模型的附录可能很长，
+普通构建和仓库内参考 bundle 因而不启用此选项。论文中建议引用正文的命名装配公式，并仅把
+精确附录作为模型复现或人工核验材料。
+
+本地生成 PDF：
+
+```shell
+cd build/euler
+pdflatex softarm_model.tex
+```
+
+该 TeX 仅依赖标准 `article`、`amsmath`、`amssymb`、`geometry` 和 `longtable`，
+不被 MATLAB loader 或 Simulink 消费，且不会改变 manifest。
+
 浮动基和平面接触可直接在同一 TOML 中声明；完整示例见
 `examples/config/pcc_flying_plane_contact_n1.toml`：
 

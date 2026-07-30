@@ -82,6 +82,7 @@ def generate_matlab_bundle(
     wolfram_kernel: str | None = None,
     actuation: ActuationModel | None = None,
     constraint: ConstraintModel | None = None,
+    tex_appendix: bool = False,
 ) -> Path:
     target = Path(output).resolve()
     target.mkdir(parents=True, exist_ok=True)
@@ -173,4 +174,15 @@ def generate_matlab_bundle(
         "constraint": constraint_manifest,
     }
     (target / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    from .latex import generate_latex_document
+
+    generate_latex_document(
+        plant,
+        target,
+        actuation=actuation,
+        constraint=constraint,
+        include_appendix=tex_appendix,
+        backend=backend,
+        wolfram_kernel=wolfram_kernel,
+    )
     return target

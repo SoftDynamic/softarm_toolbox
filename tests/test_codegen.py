@@ -39,9 +39,14 @@ def test_minimal_manifest_and_fixed_functions(tmp_path):
     for filename in (
         "softarm_mass.m", "softarm_bias.m", "softarm_kinematics.m",
         "softarm_end_jacobian.m", "softarm_applied_force.m",
-        "softarm_forward_dynamics.m", "softarm_state_rhs.m",
+        "softarm_forward_dynamics.m", "softarm_state_rhs.m", "softarm_model.tex",
     ):
         assert (tmp_path / filename).is_file()
+    document = (tmp_path / "softarm_model.tex").read_text(encoding="utf-8")
+    assert document.startswith(r"\documentclass[11pt]{article}")
+    assert r"\begin{document}" in document
+    assert document.endswith("\\end{document}\n")
+    assert "Exact Symbolic Appendix" not in document
 
 
 def test_actuated_bundle_keeps_minimal_manifest_and_generic_functions(tmp_path):
