@@ -18,9 +18,10 @@ bundleParameter = mask.getParameter("Bundle");
 bundleParameter.Prompt = "Bundle directory";
 bundleParameter.Callback = "if string(get_param(gcb,'Type'))~=""block_diagram"",softarm.applyPlantMask(string(gcb),'plant');end;";
 
-add_block("simulink/Sources/In1", model+"/tau", "Position", [30 80 60 100], "PortDimensions", "softarm_nq");
-add_block("simulink/Sources/In1", model+"/w", "Position", [30 140 60 160], "PortDimensions", "6");
-add_block("simulink/Sources/Constant", model+"/parameters", "Position", [30 200 90 230], "Value", "softarm_p");
+add_block("simulink/Sources/In1", model+"/tau_arm", "Position", [30 55 60 75], "PortDimensions", "softarm_narm");
+add_block("simulink/Sources/In1", model+"/vehicle_wrench", "Position", [30 105 60 125], "PortDimensions", "6");
+add_block("simulink/Sources/In1", model+"/tip_wrench", "Position", [30 155 60 175], "PortDimensions", "6");
+add_block("simulink/Sources/Constant", model+"/parameters", "Position", [30 215 90 245], "Value", "softarm_p");
 add_block("simulink/Continuous/Integrator", model+"/state", "Position", [360 75 390 105], "InitialCondition", "softarm_x0");
 
 add_block("simulink/Signal Routing/Demux", model+"/State split", "Position", [440 55 445 145], ...
@@ -28,7 +29,7 @@ add_block("simulink/Signal Routing/Demux", model+"/State split", "Position", [44
 
 add_block("simulink/User-Defined Functions/MATLAB Function", model+"/State RHS", "Position", [170 65 300 175]);
 chart = find(sfroot, "-isa", "Stateflow.EMChart", "Path", model+"/State RHS");
-chart.Script = sprintf("function dx = fcn(x,tau,w,p)\n%%#codegen\ndx = softarm_state_rhs(x,tau,w,p);\nend\n");
+chart.Script = sprintf("function dx = fcn(x,tauArm,wVehicle,wTip,p)\n%%#codegen\ndx = softarm_state_rhs(x,tauArm,wVehicle,wTip,p);\nend\n");
 
 add_block("simulink/User-Defined Functions/MATLAB Function", model+"/Tip pose", "Position", [540 170 650 230]);
 chart = find(sfroot, "-isa", "Stateflow.EMChart", "Path", model+"/Tip pose");
@@ -44,8 +45,9 @@ add_block("simulink/Sinks/Out1", model+"/tip_pose", "Position", [720 190 750 210
 add_block("simulink/Sinks/Out1", model+"/diagnostic", "Position", [720 275 750 295]);
 
 add_line(model, "state/1", "State split/1");
-add_line(model, "state/1", "State RHS/1"); add_line(model, "tau/1", "State RHS/2");
-add_line(model, "w/1", "State RHS/3"); add_line(model, "parameters/1", "State RHS/4");
+add_line(model, "state/1", "State RHS/1"); add_line(model, "tau_arm/1", "State RHS/2");
+add_line(model, "vehicle_wrench/1", "State RHS/3"); add_line(model, "tip_wrench/1", "State RHS/4");
+add_line(model, "parameters/1", "State RHS/5");
 add_line(model, "State RHS/1", "state/1");
 add_line(model, "State split/1", "q_out/1"); add_line(model, "State split/2", "dq_out/1");
 add_line(model, "State split/1", "Tip pose/1"); add_line(model, "parameters/1", "Tip pose/2");

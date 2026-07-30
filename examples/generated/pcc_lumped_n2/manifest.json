@@ -1,13 +1,20 @@
 {
-  "segments": 2,
-  "coordinates": [
-    "bx1",
-    "by1",
-    "l1",
-    "bx2",
-    "by2",
-    "l2"
-  ],
+  "model": {
+    "family": "pcc",
+    "segments": 2,
+    "base_mode": "fixed"
+  },
+  "coordinates": {
+    "base": [],
+    "arm": [
+      "bx1",
+      "by1",
+      "l1",
+      "bx2",
+      "by2",
+      "l2"
+    ]
+  },
   "parameters": [
     {
       "name": "s1_rest_length",
@@ -117,5 +124,7 @@
       "name": "tip_Izz",
       "default": 0.01
     }
-  ]
+  ],
+  "actuation": null,
+  "constraint": null
 }

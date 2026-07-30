@@ -5,7 +5,7 @@ import sympy as sp
 
 
 class ActuatorMap(Protocol):
-    """Optional physical actuator mapping; the base plant consumes tau directly."""
+    """Optional physical actuator mapping to arm-only generalized force."""
 
     coordinates: sp.Matrix
     jacobian: sp.Matrix
@@ -16,7 +16,11 @@ class ActuatorMap(Protocol):
 
 
 class ConstraintMap(Protocol):
-    """Optional acceleration-level constraint supplied by a future extension."""
+    """Acceleration-level constraint with a possibly non-ideal reaction map."""
 
+    coordinates: sp.Matrix
     jacobian: sp.Matrix
     velocity_bias: sp.Matrix
+    reaction_map: sp.Matrix
+    stabilization_frequency: sp.Matrix
+    stabilization_ratio: sp.Matrix

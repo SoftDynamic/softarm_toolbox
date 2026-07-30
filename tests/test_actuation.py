@@ -20,7 +20,7 @@ def _three_tendon():
 
 def _values(plant, actuation, q_values):
     return {
-        **{symbol: value for symbol, value in zip(plant.q, q_values)},
+        **{symbol: value for symbol, value in zip(plant.arm_q, q_values)},
         **{item.symbol: item.default for item in plant.parameters + actuation.parameters},
     }
 
@@ -37,7 +37,7 @@ def test_three_tendon_axial_mode_jacobian_and_virtual_work():
 
     step = 1e-7
     numerical = np.empty_like(jacobian)
-    for column, symbol in enumerate(plant.q):
+    for column, symbol in enumerate(plant.arm_q):
         plus = dict(values)
         minus = dict(values)
         plus[symbol] += step
@@ -118,8 +118,8 @@ def test_custom_actuator_builder_registration():
     plant = derive(load_config(ROOT / "examples/config/pcc_lumped_n2.toml"))
 
     def builder(symbolic_plant, config):
-        coordinate = sp.Matrix([symbolic_plant.q[0]])
-        jacobian = coordinate.jacobian(symbolic_plant.q)
+        coordinate = sp.Matrix([symbolic_plant.arm_q[0]])
+        jacobian = coordinate.jacobian(symbolic_plant.arm_q)
         return ActuationModel(
             config.family, config.acceleration, ("custom",), ("signed",), (),
             coordinate, jacobian, sp.zeros(1, 1),

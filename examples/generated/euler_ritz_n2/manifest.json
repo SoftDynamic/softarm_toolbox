@@ -1,11 +1,18 @@
 {
-  "segments": 2,
-  "coordinates": [
-    "ax1",
-    "ay1",
-    "ax2",
-    "ay2"
-  ],
+  "model": {
+    "family": "euler",
+    "segments": 2,
+    "base_mode": "fixed"
+  },
+  "coordinates": {
+    "base": [],
+    "arm": [
+      "ax1",
+      "ay1",
+      "ax2",
+      "ay2"
+    ]
+  },
   "parameters": [
     {
       "name": "s1_length",
@@ -99,5 +106,7 @@
       "name": "tip_Izz",
       "default": 0.01
     }
-  ]
+  ],
+  "actuation": null,
+  "constraint": null
 }

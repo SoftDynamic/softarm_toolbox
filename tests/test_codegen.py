@@ -5,10 +5,11 @@ from softarm.ast import decode, encode
 from softarm.codegen import generate_matlab_bundle
 from softarm import derive_actuation, load_config
 from softarm.config import (
-    ActuationConfig, IntegrationConfig, ModelConfig, TendonChannelConfig,
+    ActuationConfig, ConstraintConfig, IntegrationConfig, ModelConfig, TendonChannelConfig,
     TendonSpanConfig,
 )
 from softarm.derive import derive
+from softarm.constraints import derive_constraint
 
 
 ROOT = Path(__file__).parents[1]
@@ -32,11 +33,13 @@ def test_minimal_manifest_and_fixed_functions(tmp_path):
     plant = _small_plant()
     generate_matlab_bundle(plant, tmp_path)
     manifest = json.loads((tmp_path / "manifest.json").read_text())
-    assert set(manifest) == {"segments", "coordinates", "parameters"}
-    assert len(manifest["coordinates"]) == 2
+    assert set(manifest) == {"model", "coordinates", "parameters", "actuation", "constraint"}
+    assert manifest["coordinates"]["base"] == []
+    assert len(manifest["coordinates"]["arm"]) == 2
     for filename in (
         "softarm_mass.m", "softarm_bias.m", "softarm_kinematics.m",
-        "softarm_end_jacobian.m", "softarm_forward_dynamics.m", "softarm_state_rhs.m",
+        "softarm_end_jacobian.m", "softarm_applied_force.m",
+        "softarm_forward_dynamics.m", "softarm_state_rhs.m",
     ):
         assert (tmp_path / filename).is_file()
 
@@ -47,20 +50,20 @@ def test_actuated_bundle_keeps_minimal_manifest_and_generic_functions(tmp_path):
     actuation = derive_actuation(plant)
     generate_matlab_bundle(plant, tmp_path, actuation=actuation)
     manifest = json.loads((tmp_path / "manifest.json").read_text())
-    assert set(manifest) == {"segments", "coordinates", "parameters"}
+    assert set(manifest) == {"model", "coordinates", "parameters", "actuation", "constraint"}
     assert [item["name"] for item in manifest["parameters"]][-2:] == [
         "act_t3_s1_radius", "act_t3_s2_radius",
     ]
     for filename in (
         "softarm_actuator_coordinates.m",
         "softarm_actuator_jacobian.m",
-        "softarm_actuator_velocity_bias.m",
-        "softarm_actuator_force.m",
-        "softarm_actuator_info.m",
-        "softarm_actuator_acceleration.m",
+            "softarm_actuator_velocity_bias.m",
+            "softarm_actuator_force.m",
+            "softarm_actuator_acceleration.m",
     ):
         assert (tmp_path / filename).is_file()
     assert not list(tmp_path.glob("*two_tendon*"))
+    assert not (tmp_path / "softarm_actuator_info.m").exists()
 
 
 def test_force_only_actuation_omits_strict_acceleration_function(tmp_path):
@@ -75,3 +78,27 @@ def test_force_only_actuation_omits_strict_acceleration_function(tmp_path):
     generate_matlab_bundle(plant, tmp_path, actuation=actuation)
     assert (tmp_path / "softarm_actuator_force.m").is_file()
     assert not (tmp_path / "softarm_actuator_acceleration.m").exists()
+
+
+def test_constraint_bundle_has_manifest_metadata_and_solver(tmp_path):
+    config = ModelConfig(
+        family="euler", segments=1, integration=IntegrationConfig("analytic"),
+        ritz_x=(0.0, 0.0, 1.5, -0.5), ritz_y=(0.0, 0.0, 1.5, -0.5),
+        constraint=ConstraintConfig("plane_point_contact", {
+            "family": "plane_point_contact", "plane_normal": [0.0, 0.0, -1.0],
+        }),
+    )
+    plant = derive(config)
+    constraint = derive_constraint(plant)
+    generate_matlab_bundle(plant, tmp_path, constraint=constraint)
+    manifest = json.loads((tmp_path / "manifest.json").read_text())
+    assert manifest["constraint"]["family"] == "plane_point_contact"
+    assert manifest["constraint"]["channels"] == [
+        {"name": "normal_contact", "kind": "unilateral"}
+    ]
+    for filename in (
+        "softarm_constraint_value.m", "softarm_constraint_jacobian.m",
+        "softarm_constraint_velocity_bias.m", "softarm_constraint_reaction_map.m",
+        "softarm_constraint_acceleration.m",
+    ):
+        assert (tmp_path / filename).is_file()

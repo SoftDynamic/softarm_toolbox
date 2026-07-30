@@ -10,7 +10,19 @@ ROOT = Path(__file__).parents[1]
 
 def test_reference_configs_are_valid():
     for path in (ROOT / "examples" / "config").glob("*.toml"):
-        assert load_config(path).segments == 2
+        assert load_config(path).segments >= 1
+
+
+def test_base_and_constraint_validation(tmp_path):
+    path = tmp_path / "floating.toml"
+    path.write_text(
+        '[model]\nfamily="pcc"\nsegments=1\n'
+        '[base]\nmode="floating_rpy"\nmount_xyz=[0,0,0]\nmount_rpy=[0,0,0]\n'
+        '[constraint]\nfamily="plane_point_contact"\nplane_normal=[0,0,0]\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="plane_normal.*nonzero"):
+        load_config(path)
 
 
 def test_euler_requires_explicit_normalized_ritz(tmp_path):

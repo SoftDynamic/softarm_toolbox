@@ -9,6 +9,25 @@ def homogeneous(rotation: sp.Matrix, position: sp.Matrix) -> sp.Matrix:
     return rotation.row_join(position).col_join(sp.Matrix([[0, 0, 0, 1]]))
 
 
+def rotation_rpy(roll: sp.Expr, pitch: sp.Expr, yaw: sp.Expr) -> sp.Matrix:
+    """ZYX roll-pitch-yaw rotation from a local frame to its parent frame."""
+    cr, sr = sp.cos(roll), sp.sin(roll)
+    cp, spitch = sp.cos(pitch), sp.sin(pitch)
+    cy, sy = sp.cos(yaw), sp.sin(yaw)
+    return sp.Matrix([
+        [cy * cp, cy * spitch * sr - sy * cr, cy * spitch * cr + sy * sr],
+        [sy * cp, sy * spitch * sr + cy * cr, sy * spitch * cr - cy * sr],
+        [-spitch, cp * sr, cp * cr],
+    ])
+
+
+def transform_rpy(
+    position: tuple[sp.Expr, sp.Expr, sp.Expr] | sp.Matrix,
+    rpy: tuple[sp.Expr, sp.Expr, sp.Expr],
+) -> sp.Matrix:
+    return homogeneous(rotation_rpy(*rpy), sp.Matrix(position))
+
+
 def pcc_transform(bx: sp.Expr, by: sp.Expr, length: sp.Expr, xi: sp.Expr = sp.S.One) -> sp.Matrix:
     x = xi * bx
     y = xi * by

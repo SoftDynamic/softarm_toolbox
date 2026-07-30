@@ -7,6 +7,7 @@ import sys
 
 from .codegen import generate_matlab_bundle
 from .actuation import derive_actuation
+from .constraints import derive_constraint
 from .config import ConfigError, load_config
 from .derive import derive
 
@@ -22,7 +23,7 @@ def _parser() -> argparse.ArgumentParser:
     build.add_argument("--wolfram-kernel")
     validate = commands.add_parser("validate", help="validate a model configuration")
     validate.add_argument("config")
-    inspect = commands.add_parser("inspect", help="print a generated bundle's minimal manifest")
+    inspect = commands.add_parser("inspect", help="print a generated bundle manifest")
     inspect.add_argument("bundle")
     return parser
 
@@ -34,7 +35,10 @@ def main(argv: list[str] | None = None) -> int:
             config = load_config(args.config)
             plant = derive(config)
             actuation = derive_actuation(plant)
+            constraint = derive_constraint(plant)
             suffix = "" if actuation is None else f" and {actuation.count} actuator channel(s)"
+            if constraint is not None:
+                suffix += f" and {constraint.count} constraint channel(s)"
             print(f"valid {config.family} configuration with {config.segments} segment(s){suffix}")
             return 0
         if args.command == "inspect":
@@ -44,8 +48,9 @@ def main(argv: list[str] | None = None) -> int:
         config = load_config(args.config)
         plant = derive(config)
         actuation = derive_actuation(plant)
+        constraint = derive_constraint(plant)
         output = generate_matlab_bundle(
-            plant, args.out, args.backend, args.wolfram_kernel, actuation
+            plant, args.out, args.backend, args.wolfram_kernel, actuation, constraint
         )
         print(output)
         return 0

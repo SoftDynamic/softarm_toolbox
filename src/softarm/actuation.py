@@ -71,16 +71,16 @@ def _tendon_builder(plant: SymbolicPlant, config: ActuationConfig) -> ActuationM
             sine = sp.sin(sp.Float(str(span.angle)))
             if plant.config.family == "pcc":
                 offset = 3 * section
-                bending = plant.q[offset] * cosine + plant.q[offset + 1] * sine
+                bending = plant.arm_q[offset] * cosine + plant.arm_q[offset + 1] * sine
                 if channel.kind == "unilateral":
-                    coordinate += plant.q[offset + 2]
+                    coordinate += plant.arm_q[offset + 2]
                 coordinate -= radius * bending
             elif plant.config.family == "euler":
                 offset = 2 * section
                 length = plant_parameters[f"s{span.section}_length"]
                 bending = (
-                    plant.q[offset] * cosine * slope_x
-                    + plant.q[offset + 1] * sine * slope_y
+                    plant.arm_q[offset] * cosine * slope_x
+                    + plant.arm_q[offset + 1] * sine * slope_y
                 ) / length
                 if channel.kind == "unilateral":
                     coordinate += length
@@ -92,8 +92,8 @@ def _tendon_builder(plant: SymbolicPlant, config: ActuationConfig) -> ActuationM
         coordinates.append(coordinate)
 
     coordinate_matrix = sp.Matrix(coordinates)
-    jacobian = coordinate_matrix.jacobian(plant.q)
-    velocity_bias = (jacobian * plant.dq).jacobian(plant.q) * plant.dq
+    jacobian = coordinate_matrix.jacobian(plant.arm_q)
+    velocity_bias = (jacobian * plant.arm_dq).jacobian(plant.arm_q) * plant.arm_dq
     return ActuationModel(
         "tendon",
         config.acceleration,
@@ -119,21 +119,21 @@ def register_actuator(name: str, builder: ActuatorBuilder) -> None:
 def _validate_strict_rank(plant: SymbolicPlant, actuation: ActuationModel) -> None:
     if actuation.acceleration != "strict":
         return
-    if actuation.count > len(plant.q):
+    if actuation.count > len(plant.arm_q):
         raise ValueError(
-            f"strict actuator acceleration has {actuation.count} constraints but only {len(plant.q)} coordinates"
+            f"strict actuator acceleration has {actuation.count} constraints but only {len(plant.arm_q)} arm coordinates"
         )
     defaults = {
         item.symbol: item.default for item in plant.parameters + actuation.parameters
     }
-    reference = {coordinate: 0.0 for coordinate in plant.q}
+    reference = {coordinate: 0.0 for coordinate in plant.arm_q}
     if plant.config.family == "pcc":
         for section in range(plant.config.segments):
             rest = next(
                 item.default for item in plant.parameters
                 if item.name == f"s{section + 1}_rest_length"
             )
-            reference[plant.q[3 * section + 2]] = rest
+            reference[plant.arm_q[3 * section + 2]] = rest
     nominal = actuation.jacobian.subs(defaults).subs(reference).evalf()
 
     def nearly_zero(value: sp.Expr) -> bool:
@@ -157,7 +157,7 @@ def derive_actuation(
     result = builder(plant, selected)
     if result.coordinates.shape != (result.count, 1):
         raise ValueError("actuator builder returned inconsistent coordinate dimensions")
-    if result.jacobian.shape != (result.count, len(plant.q)):
+    if result.jacobian.shape != (result.count, len(plant.arm_q)):
         raise ValueError("actuator builder returned inconsistent Jacobian dimensions")
     if result.velocity_bias.shape != (result.count, 1):
         raise ValueError("actuator builder returned inconsistent velocity-bias dimensions")

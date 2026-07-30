@@ -1,14 +1,16 @@
-function [ddq,tension,isPullOnlyFeasible,reciprocalCondition] = softarm_actuator_acceleration(q,dq,coordinateAcceleration,tauExternal,w,p)
+function [ddq,tension,isPullOnlyFeasible,reciprocalCondition] = softarm_actuator_acceleration(q,dq,coordinateAcceleration,tauArmExternal,wVehicle,wTip,p)
 %SOFTARM_ACTUATOR_ACCELERATION Enforce independent actuator-coordinate accelerations.
 %#codegen
 assert(numel(coordinateAcceleration)==2);
 coordinateAcceleration=coordinateAcceleration(:);
-M=softarm_mass(q,p); h=softarm_bias(q,dq,p); J=softarm_end_jacobian(q,p);
+M=softarm_mass(q,p); h=softarm_bias(q,dq,p);
 Ja=softarm_actuator_jacobian(q,p);
+JaFull=[zeros(2,0),Ja];
 jdotdq=softarm_actuator_velocity_bias(q,dq,p);
-S=Ja*(M\Ja.'); reciprocalCondition=rcond(S);
+S=JaFull*(M\JaFull.'); reciprocalCondition=rcond(S);
 assert(isfinite(reciprocalCondition) && reciprocalCondition>sqrt(eps),'softarm:SingularActuatorConstraint','Actuator acceleration constraints are singular.');
-n=numel(q); m=size(Ja,1); solution=[M,Ja.';Ja,zeros(m)]\[tauExternal+J.'*w-h;coordinateAcceleration-jdotdq];
+Q=softarm_applied_force(q,tauArmExternal,wVehicle,wTip,p);
+n=numel(q); m=size(JaFull,1); solution=[M,JaFull.';JaFull,zeros(m)]\[Q-h;coordinateAcceleration-jdotdq];
 ddq=solution(1:n); tension=solution(n+1:n+m);
 isPullOnlyFeasible=true;
 end

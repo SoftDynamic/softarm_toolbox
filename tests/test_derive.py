@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import sympy as sp
 
-from softarm.config import load_config
+from softarm.config import BaseConfig, IntegrationConfig, ModelConfig, load_config
 from softarm.derive import derive
 from softarm.special import LAMBDA_MODULES
 
@@ -35,3 +35,39 @@ def test_euler_shapes_and_ritz_stiffness():
     # Integral of (d2/dxi2 (1.5 xi^2 - .5 xi^3))^2 on [0,1] is 3.
     assert sp.integrate((3 - 3 * sp.Symbol("xi")) ** 2, (sp.Symbol("xi"), 0, 1)) == 3
 
+
+def test_floating_base_has_coupled_coordinates_and_wrench_map():
+    fixed = derive(ModelConfig(
+        family="pcc", segments=1, inertia="lumped", integration=IntegrationConfig()
+    ))
+    floating = derive(ModelConfig(
+        family="pcc", segments=1, inertia="lumped", integration=IntegrationConfig(),
+        base=BaseConfig("floating_rpy"),
+    ))
+    assert floating.base_coordinate_names == [
+        "base_x", "base_y", "base_z", "base_roll", "base_pitch", "base_yaw"
+    ]
+    assert floating.arm_coordinate_names == fixed.arm_coordinate_names
+    assert floating.mass.shape == (9, 9)
+    assert floating.end_jacobian.shape == (6, 9)
+    assert floating.vehicle_wrench_map.shape == (9, 6)
+    q = np.zeros(len(floating.q)); q[8] = 0.5
+    p = np.array([item.default for item in floating.parameters])
+    evaluate = sp.lambdify(
+        (floating.q, floating.p), floating.mass, [LAMBDA_MODULES, "numpy"]
+    )
+    mass = np.asarray(evaluate(q, p), dtype=float)
+    assert np.linalg.norm(mass[:6, 6:]) > 0
+    np.testing.assert_allclose(mass, mass.T, atol=1e-12)
+    assert floating.mass.diff(floating.base_q[0]) == sp.zeros(9)
+    assert floating.mass.diff(floating.base_q[1]) == sp.zeros(9)
+    assert floating.mass.diff(floating.base_q[2]) == sp.zeros(9)
+
+    q_arm = np.array([0.02, -0.01, 0.5])
+    fixed_p = np.array([item.default for item in fixed.parameters])
+    fixed_mass = sp.lambdify(
+        (fixed.q, fixed.p), fixed.mass, [LAMBDA_MODULES, "numpy"]
+    )(q_arm, fixed_p)
+    q[6:] = q_arm
+    floating_mass = np.asarray(evaluate(q, p), dtype=float)
+    np.testing.assert_allclose(floating_mass[6:, 6:], fixed_mass, rtol=1e-10, atol=1e-12)

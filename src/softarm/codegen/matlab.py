@@ -9,6 +9,7 @@ from sympy.printing.octave import OctaveCodePrinter
 
 from ..backends import optimize
 from ..actuation import ActuationModel
+from ..constraints import ConstraintModel
 from ..derive import SymbolicPlant
 
 
@@ -80,6 +81,7 @@ def generate_matlab_bundle(
     backend: str = "sympy",
     wolfram_kernel: str | None = None,
     actuation: ActuationModel | None = None,
+    constraint: ConstraintModel | None = None,
 ) -> Path:
     target = Path(output).resolve()
     target.mkdir(parents=True, exist_ok=True)
@@ -97,12 +99,28 @@ def generate_matlab_bundle(
         target / "softarm_end_jacobian.m", "softarm_end_jacobian", "J", plant.end_jacobian,
         plant.end_jacobian.shape, ["q", "p"], common, backend, wolfram_kernel,
     )
+    render_function(
+        target / "softarm_vehicle_wrench_map.m", "softarm_vehicle_wrench_map", "Bv",
+        plant.vehicle_wrench_map, plant.vehicle_wrench_map.shape, ["q", "p"], common,
+        backend, wolfram_kernel,
+    )
+    (target / "softarm_applied_force.m").write_text(
+        (
+            "function Q = softarm_applied_force(q,tauArm,wVehicle,wTip,p)\n"
+            "%SOFTARM_APPLIED_FORCE Assemble arm, vehicle-body, and world-tip loads.\n"
+            "%#codegen\n"
+            f"assert(numel(tauArm)=={len(plant.arm_q)}); assert(numel(wVehicle)==6); assert(numel(wTip)==6);\n"
+            f"Q=[zeros({len(plant.base_q)},1);tauArm(:)]+softarm_vehicle_wrench_map(q,p)*wVehicle(:)+softarm_end_jacobian(q,p).'*wTip(:);\n"
+            "end\n"
+        ),
+        encoding="utf-8",
+    )
     (target / "softarm_forward_dynamics.m").write_text(
-        "function ddq = softarm_forward_dynamics(q,dq,tau,w,p)\n%#codegen\nM=softarm_mass(q,p); h=softarm_bias(q,dq,p); J=softarm_end_jacobian(q,p); ddq=M\\(tau+J.'*w-h);\nend\n",
+        "function ddq = softarm_forward_dynamics(q,dq,tauArm,wVehicle,wTip,p)\n%#codegen\nM=softarm_mass(q,p); h=softarm_bias(q,dq,p); Q=softarm_applied_force(q,tauArm,wVehicle,wTip,p); ddq=M\\(Q-h);\nend\n",
         encoding="utf-8",
     )
     (target / "softarm_state_rhs.m").write_text(
-        "function dx = softarm_state_rhs(x,tau,w,p)\n%#codegen\nn=numel(x)/2; q=x(1:n); dq=x(n+1:end); dx=[dq;softarm_forward_dynamics(q,dq,tau,w,p)];\nend\n",
+        "function dx = softarm_state_rhs(x,tauArm,wVehicle,wTip,p)\n%#codegen\nn=numel(x)/2; q=x(1:n); dq=x(n+1:end); dx=[dq;softarm_forward_dynamics(q,dq,tauArm,wVehicle,wTip,p)];\nend\n",
         encoding="utf-8",
     )
     for filename, content in _HELPERS.items():
@@ -112,11 +130,47 @@ def generate_matlab_bundle(
     clear_actuator_functions(target)
     if actuation is not None:
         generate_actuator_matlab(plant, actuation, target, backend, wolfram_kernel)
-    runtime_parameters = plant.parameters + (() if actuation is None else actuation.parameters)
+    from .constraint_matlab import clear_constraint_functions, generate_constraint_matlab
+
+    clear_constraint_functions(target)
+    if constraint is not None:
+        generate_constraint_matlab(
+            plant, constraint, target, backend, wolfram_kernel,
+            () if actuation is None else actuation.parameters,
+        )
+    runtime_parameters = (
+        plant.parameters
+        + (() if actuation is None else actuation.parameters)
+        + (() if constraint is None else constraint.parameters)
+    )
+    actuation_manifest = None if actuation is None else {
+        "family": actuation.family,
+        "acceleration": actuation.acceleration,
+        "channels": [
+            {"name": name, "kind": kind}
+            for name, kind in zip(actuation.channel_names, actuation.channel_kinds, strict=True)
+        ],
+    }
+    constraint_manifest = None if constraint is None else {
+        "family": constraint.family,
+        "channels": [
+            {"name": name, "kind": kind}
+            for name, kind in zip(constraint.channel_names, constraint.channel_kinds, strict=True)
+        ],
+    }
     manifest = {
-        "segments": plant.config.segments,
-        "coordinates": plant.coordinate_names,
+        "model": {
+            "family": plant.config.family,
+            "segments": plant.config.segments,
+            "base_mode": plant.config.base.mode,
+        },
+        "coordinates": {
+            "base": plant.base_coordinate_names,
+            "arm": plant.arm_coordinate_names,
+        },
         "parameters": [{"name": item.name, "default": item.default} for item in runtime_parameters],
+        "actuation": actuation_manifest,
+        "constraint": constraint_manifest,
     }
     (target / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     return target

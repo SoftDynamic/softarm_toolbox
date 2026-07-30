@@ -14,19 +14,21 @@ for name = names
     bundle = fullfile(testCase.TestData.root,"examples","generated",name);
     plant = softarm.loadModel(bundle);
     q = zeros(plant.nq,1);
-    for k = 1:plant.nq
-        token = regexp(plant.manifest.coordinates{k},'^l(\d+)$','tokens','once');
+    armCoordinates = cellstr(plant.manifest.coordinates.arm);
+    for k = 1:plant.narm
+        token = regexp(armCoordinates{k},'^l(\d+)$','tokens','once');
         if ~isempty(token)
             field = "s"+token{1}+"_rest_length";
             index = find(strcmp({plant.manifest.parameters.name},field),1);
-            q(k) = plant.parameters(index);
+            q(plant.nbase+k) = plant.parameters(index);
         end
     end
     M = plant.mass(q,plant.parameters);
     verifyTrue(testCase,all(isfinite(M(:))));
     verifyLessThan(testCase,norm(M-M','fro'),1e-8);
     verifyGreaterThan(testCase,min(eig((M+M')/2)),0);
-    dx = plant.stateRhs([q;zeros(plant.nq,1)],zeros(plant.nq,1),zeros(6,1),plant.parameters);
+    dx = plant.stateRhs([q;zeros(plant.nq,1)],zeros(plant.narm,1), ...
+        zeros(6,1),zeros(6,1),plant.parameters);
     verifyTrue(testCase,all(isfinite(dx)));
 end
 end
@@ -34,12 +36,13 @@ end
 function testLinearization(testCase)
 bundle = fullfile(testCase.TestData.root,"examples","generated","euler_ritz_n2");
 plant = softarm.loadModel(bundle);
-x = zeros(2*plant.nq,1); tau = zeros(plant.nq,1);
-[A,B,E] = softarm.linearize(plant,x,tau);
+x = zeros(2*plant.nq,1); tau = zeros(plant.narm,1);
+[A,Barm,Bvehicle,Btip] = softarm.linearize(plant,x,tau);
 verifySize(testCase,A,[2*plant.nq,2*plant.nq]);
-verifySize(testCase,B,[2*plant.nq,plant.nq]);
-verifySize(testCase,E,[2*plant.nq,6]);
-verifyTrue(testCase,all(isfinite([A(:);B(:);E(:)])));
+verifySize(testCase,Barm,[2*plant.nq,plant.narm]);
+verifySize(testCase,Bvehicle,[2*plant.nq,6]);
+verifySize(testCase,Btip,[2*plant.nq,6]);
+verifyTrue(testCase,all(isfinite([A(:);Barm(:);Bvehicle(:);Btip(:)])));
 end
 
 function testThreeTendonForceAndAxialMode(testCase)
@@ -61,7 +64,7 @@ verifyError(testCase,@() plant.actuation.force(q,[-1;0;0],plant.parameters), ...
     "softarm:NegativeUnilateralTension");
 verifyEqual(testCase,Ja(:,[3,6]),ones(3,2),"AbsTol",1e-12);
 verifyEqual(testCase,sum(Ja(:,[1,2,4,5]),1),zeros(1,4),"AbsTol",1e-12);
-ddq = plant.forwardDynamics(q,dq,tau,w,plant.parameters);
+ddq = plant.forwardDynamics(q,dq,tau,zeros(6,1),w,plant.parameters);
 verifyTrue(testCase,all(isfinite(ddq)));
 deltaQ = [0.003;-0.002;0.001;0.004;-0.001;0.002];
 verifyEqual(testCase,tau.'*deltaQ,-tension.'*(Ja*deltaQ),"AbsTol",1e-12);
@@ -76,7 +79,8 @@ dq = [0.02;0.01;0.001;-0.01;0.03;-0.002];
 command = [0.01;-0.01;0.005];
 w = zeros(6,1);
 [ddq,tension,isPullOnlyFeasible,reciprocalCondition] = ...
-    plant.actuation.acceleration(q,dq,command,zeros(plant.nq,1),w,plant.parameters);
+    plant.actuation.acceleration(q,dq,command,zeros(plant.narm,1), ...
+        zeros(6,1),w,plant.parameters);
 Ja = plant.actuation.jacobian(q,plant.parameters);
 jdotdq = plant.actuation.velocityBias(q,dq,plant.parameters);
 verifyGreaterThan(testCase,reciprocalCondition,sqrt(eps));
@@ -85,8 +89,8 @@ verifyTrue(testCase,all(isfinite([ddq;tension])));
 verifyEqual(testCase,isPullOnlyFeasible,all(tension>=-sqrt(eps)));
 M = plant.mass(q,plant.parameters);
 h = plant.bias(q,dq,plant.parameters);
-J = plant.endJacobian(q,plant.parameters);
-verifyLessThan(testCase,norm(M*ddq+h+Ja.'*tension-J.'*w),1e-10);
+Q = plant.appliedForce(q,zeros(plant.narm,1),zeros(6,1),w,plant.parameters);
+verifyLessThan(testCase,norm(M*ddq+h+Ja.'*tension-Q),1e-10);
 end
 
 function testSignedEquivalentTendon(testCase)
@@ -110,7 +114,9 @@ files = [ ...
     "softarm_actuator_force_block.slx", ...
     "softarm_actuator_acceleration_block.slx", ...
     "softarm_tendon_force_demo.slx", ...
-    "softarm_tendon_acceleration_demo.slx"];
+    "softarm_tendon_acceleration_demo.slx", ...
+    "softarm_constrained_plant.slx", ...
+    "softarm_flying_contact_demo.slx"];
 for file = files
     verifyTrue(testCase,isfile(fullfile(root,file)));
 end
@@ -148,4 +154,35 @@ verifyEqual(testCase,plant.nq,4);
 verifyEqual(testCase,plant.actuation.count,2);
 verifyEqual(testCase,string(plant.actuation.names),["pair_x","pair_y"]);
 verifyTrue(testCase,isfield(plant.actuation,"acceleration"));
+end
+
+function testFloatingPlaneContactBundle(testCase)
+root = testCase.TestData.root;
+plant = softarm.loadModel(fullfile(root,"examples","generated", ...
+    "pcc_flying_plane_contact_n1"));
+verifyEqual(testCase,plant.nbase,6);
+verifyEqual(testCase,plant.narm,3);
+verifyEqual(testCase,plant.constraint.family,"plane_point_contact");
+q = zeros(plant.nq,1);
+lengthIndex = find(strcmp({plant.manifest.parameters.name},"s1_rest_length"),1);
+q(plant.nbase+3) = plant.parameters(lengthIndex);
+dq = zeros(plant.nq,1);
+phi = plant.constraint.value(q,plant.parameters);
+verifyLessThan(testCase,abs(phi),1e-12);
+[ddq,reaction,isFeasible,condition] = plant.constraint.acceleration( ...
+    q,dq,zeros(plant.narm,1),zeros(6,1),zeros(6,1),zeros(1,1),plant.parameters);
+A = plant.constraint.jacobian(q,plant.parameters);
+gamma = plant.constraint.velocityBias(q,dq,plant.parameters);
+verifyLessThan(testCase,norm(A*ddq+gamma),1e-9);
+verifyTrue(testCase,all(isfinite([ddq;reaction;condition])));
+verifyEqual(testCase,isFeasible,reaction>=-sqrt(eps));
+M = plant.mass(q,plant.parameters);
+verifyGreaterThan(testCase,norm(M(1:6,7:end),"fro"),0);
+badParameters = plant.parameters;
+normalIndex = find(startsWith(string({plant.manifest.parameters.name}), ...
+    "constraint_plane_normal_"));
+badParameters(normalIndex) = 0;
+verifyError(testCase,@() plant.constraint.acceleration( ...
+    q,dq,zeros(plant.narm,1),zeros(6,1),zeros(6,1),zeros(1,1),badParameters), ...
+    "softarm:InvalidPlaneNormal");
 end

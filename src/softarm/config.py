@@ -19,6 +19,13 @@ class IntegrationConfig:
 
 
 @dataclass(frozen=True)
+class BaseConfig:
+    mode: str = "fixed"
+    mount_xyz: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    mount_rpy: tuple[float, float, float] = (0.0, 0.0, 0.0)
+
+
+@dataclass(frozen=True)
 class TendonSpanConfig:
     section: int
     radius: float
@@ -41,6 +48,12 @@ class ActuationConfig:
 
 
 @dataclass(frozen=True)
+class ConstraintConfig:
+    family: str
+    data: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class ModelConfig:
     family: str
     segments: int
@@ -49,7 +62,9 @@ class ModelConfig:
     parameters: dict[str, Any] = field(default_factory=dict)
     ritz_x: tuple[float, ...] | None = None
     ritz_y: tuple[float, ...] | None = None
+    base: BaseConfig = field(default_factory=BaseConfig)
     actuation: ActuationConfig | None = None
+    constraint: ConstraintConfig | None = None
     source: Path | None = None
 
 
@@ -125,6 +140,58 @@ def _load_actuation(raw: Any, segments: int) -> ActuationConfig | None:
     return ActuationConfig(family, acceleration, tuple(channels), dict(raw))
 
 
+def _vector3(value: Any, name: str, default: tuple[float, float, float]) -> tuple[float, float, float]:
+    selected = default if value is None else value
+    if not isinstance(selected, (list, tuple)) or len(selected) != 3:
+        raise ConfigError(f"{name} must be an array of three finite numbers")
+    result = tuple(float(item) for item in selected)
+    if not all(math.isfinite(item) for item in result):
+        raise ConfigError(f"{name} must be an array of three finite numbers")
+    return result  # type: ignore[return-value]
+
+
+def _load_base(raw: Any) -> BaseConfig:
+    if raw is None:
+        return BaseConfig()
+    if not isinstance(raw, dict):
+        raise ConfigError("base must be a TOML table")
+    mode = str(raw.get("mode", "fixed")).lower()
+    if mode not in {"fixed", "floating_rpy"}:
+        raise ConfigError("base.mode must be 'fixed' or 'floating_rpy'")
+    return BaseConfig(
+        mode,
+        _vector3(raw.get("mount_xyz"), "base.mount_xyz", (0.0, 0.0, 0.0)),
+        _vector3(raw.get("mount_rpy"), "base.mount_rpy", (0.0, 0.0, 0.0)),
+    )
+
+
+def _load_constraint(raw: Any) -> ConstraintConfig | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ConfigError("constraint must be a TOML table")
+    family = str(raw.get("family", "")).lower()
+    if not family:
+        raise ConfigError("constraint.family is required")
+    if family == "plane_point_contact":
+        _vector3(raw.get("tool_offset"), "constraint.tool_offset", (0.0, 0.0, 0.0))
+        _vector3(raw.get("plane_point"), "constraint.plane_point", (0.0, 0.0, 0.0))
+        normal = _vector3(raw.get("plane_normal"), "constraint.plane_normal", (0.0, 0.0, -1.0))
+        if math.sqrt(sum(item * item for item in normal)) <= 1e-12:
+            raise ConfigError("constraint.plane_normal must be nonzero")
+        for key, default, lower, strict in (
+            ("friction", 0.0, 0.0, False),
+            ("friction_velocity", 0.01, 0.0, True),
+            ("stabilization_frequency", 20.0, 0.0, True),
+            ("stabilization_ratio", 1.0, 0.0, False),
+        ):
+            value = float(raw.get(key, default))
+            if not math.isfinite(value) or value < lower or (strict and value <= lower):
+                qualifier = "positive" if strict else "nonnegative"
+                raise ConfigError(f"constraint.{key} must be finite and {qualifier}")
+    return ConstraintConfig(family, dict(raw))
+
+
 def load_config(path: str | Path) -> ModelConfig:
     source = Path(path).resolve()
     with source.open("rb") as stream:
@@ -164,7 +231,9 @@ def load_config(path: str | Path) -> ModelConfig:
         _validate_ritz(ritz_y, "ritz.y")
 
     parameters = dict(raw.get("parameters", {}))
+    base = _load_base(raw.get("base"))
     actuation = _load_actuation(raw.get("actuation"), segments)
+    constraint = _load_constraint(raw.get("constraint"))
     return ModelConfig(
         family=family,
         segments=segments,
@@ -173,7 +242,9 @@ def load_config(path: str | Path) -> ModelConfig:
         parameters=parameters,
         ritz_x=ritz_x,
         ritz_y=ritz_y,
+        base=base,
         actuation=actuation,
+        constraint=constraint,
         source=source,
     )
 

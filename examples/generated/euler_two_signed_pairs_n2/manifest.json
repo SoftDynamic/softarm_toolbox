@@ -1,11 +1,18 @@
 {
-  "segments": 2,
-  "coordinates": [
-    "ax1",
-    "ay1",
-    "ax2",
-    "ay2"
-  ],
+  "model": {
+    "family": "euler",
+    "segments": 2,
+    "base_mode": "fixed"
+  },
+  "coordinates": {
+    "base": [],
+    "arm": [
+      "ax1",
+      "ay1",
+      "ax2",
+      "ay2"
+    ]
+  },
   "parameters": [
     {
       "name": "s1_length",
@@ -115,5 +122,20 @@
       "name": "act_pair_y_s2_radius",
       "default": 0.03
     }
-  ]
+  ],
+  "actuation": {
+    "family": "tendon",
+    "acceleration": "strict",
+    "channels": [
+      {
+        "name": "pair_x",
+        "kind": "signed"
+      },
+      {
+        "name": "pair_y",
+        "kind": "signed"
+      }
+    ]
+  },
+  "constraint": null
 }

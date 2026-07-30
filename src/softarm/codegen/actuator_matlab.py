@@ -98,19 +98,6 @@ def generate_actuator_matlab(
         encoding="utf-8",
     )
 
-    names = ",".join(f'"{name}"' for name in actuation.channel_names)
-    kinds = ",".join(f'"{kind}"' for kind in actuation.channel_kinds)
-    (target / "softarm_actuator_info.m").write_text(
-        (
-            "function info = softarm_actuator_info()\n"
-            "%SOFTARM_ACTUATOR_INFO Ordered runtime actuator information.\n"
-            f"info=struct('names',[{names}],'kinds',[{kinds}],"
-            f"'count',{actuation.count},'acceleration',\"{actuation.acceleration}\");\n"
-            "end\n"
-        ),
-        encoding="utf-8",
-    )
-
     if actuation.acceleration == "strict":
         acceleration_feasibility = (
             f"isPullOnlyFeasible=all(tension([{index_vector}])>=-sqrt(eps));\n"
@@ -119,19 +106,21 @@ def generate_actuator_matlab(
         (target / "softarm_actuator_acceleration.m").write_text(
             (
                 "function [ddq,tension,isPullOnlyFeasible,reciprocalCondition] = "
-                "softarm_actuator_acceleration(q,dq,coordinateAcceleration,tauExternal,w,p)\n"
+                "softarm_actuator_acceleration(q,dq,coordinateAcceleration,tauArmExternal,wVehicle,wTip,p)\n"
                 "%SOFTARM_ACTUATOR_ACCELERATION Enforce independent actuator-coordinate accelerations.\n"
                 "%#codegen\n"
                 f"assert(numel(coordinateAcceleration)=={actuation.count});\n"
                 "coordinateAcceleration=coordinateAcceleration(:);\n"
-                "M=softarm_mass(q,p); h=softarm_bias(q,dq,p); J=softarm_end_jacobian(q,p);\n"
+                "M=softarm_mass(q,p); h=softarm_bias(q,dq,p);\n"
                 "Ja=softarm_actuator_jacobian(q,p);\n"
+                f"JaFull=[zeros({actuation.count},{len(plant.base_q)}),Ja];\n"
                 "jdotdq=softarm_actuator_velocity_bias(q,dq,p);\n"
-                "S=Ja*(M\\Ja.'); reciprocalCondition=rcond(S);\n"
+                "S=JaFull*(M\\JaFull.'); reciprocalCondition=rcond(S);\n"
                 "assert(isfinite(reciprocalCondition) && reciprocalCondition>sqrt(eps),"
                 "'softarm:SingularActuatorConstraint','Actuator acceleration constraints are singular.');\n"
-                "n=numel(q); m=size(Ja,1); solution=[M,Ja.';Ja,zeros(m)]\\"
-                "[tauExternal+J.'*w-h;coordinateAcceleration-jdotdq];\n"
+                "Q=softarm_applied_force(q,tauArmExternal,wVehicle,wTip,p);\n"
+                "n=numel(q); m=size(JaFull,1); solution=[M,JaFull.';JaFull,zeros(m)]\\"
+                "[Q-h;coordinateAcceleration-jdotdq];\n"
                 "ddq=solution(1:n); tension=solution(n+1:n+m);\n"
                 f"{acceleration_feasibility}"
                 "end\n"
