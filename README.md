@@ -107,7 +107,7 @@ Symbolic plan: derive=SymPy, bias=Wolfram, FactorTerms=off, CSE=SymPy
 | 开关 | 作用 | 建议使用场景 |
 | --- | --- | --- |
 | `--wolfram-factor-terms` | 每个 MATLAB 函数在 CSE 前执行 Wolfram `FactorTerms` | 生成表达式明显过度展开时单独试用；可能显著变慢，也不保证减少临时量 |
-| `--wolfram-cse` | 用实验性 `Experimental\`OptimizeExpression` 代替 `sympy.cse` | SymPy CSE 已确认是主要瓶颈，或需要比较生成代码时单独试用 |
+| `--wolfram-cse` | 用实验性 Experimental OptimizeExpression 代替 `sympy.cse` | SymPy CSE 已确认是主要瓶颈，或需要比较生成代码时单独试用 |
 | `--wolfram-timeout SECONDS` | 设置每项 Wolfram 操作的超时，默认 600 秒 | 已确认操作合理但默认时间不足时调整 |
 
 首次使用建议只选择 `--backend wolfram`。若仍需优化生成代码，分别试用两个
@@ -133,9 +133,7 @@ softarm build examples/config/euler_ritz_n2.toml \
   --out build/euler-wolfram-cse
 ```
 
-本机参考性能（2026-07-31，`.softarm.local.toml` 指定的 Python 3.12.13、
-Wolfram 15.0，三个独立 Python 进程各启动一个冷 Kernel，表中为中位数）如下。
-这里的数字只帮助判断耗时位于哪个阶段，不会被程序用于自动选择策略：
+参考性能如下：
 
 | 配置 | SymPy 模型推导 | Kernel 启动 | Wolfram bias | MATLAB 生成/CSE | 完整构建 |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -466,7 +464,7 @@ $$
 $$
 J_e(q)=
 \begin{bmatrix}
-J_{v,e}\\J_{\omega,e}
+J_{v,e}J_{\omega,e}
 \end{bmatrix}
 \in\mathbb{R}^{6\times n_q}.
 $$
@@ -506,7 +504,9 @@ R(\xi)=
 \qquad
 r(\xi)=l\xi
 \begin{bmatrix}
-xC\\yC\\S
+xC\\
+yC\\
+S
 \end{bmatrix}.
 $$
 
@@ -596,7 +596,8 @@ $$
 $$
 r_i=\left[I+\mathcal C(z_i)\Omega_i+\mathcal T(z_i)\Omega_i^2\right]L_i\xi\nu_i,
 \qquad
-H_i(\xi)=\begin{bmatrix}R_i&r_i\\0&1\end{bmatrix}.
+H_i(\xi)=\begin{bmatrix}R_i&r_i\\
+0&1\end{bmatrix}.
 $$
 
 参考应变默认为 $\kappa_0=0,\nu_0=[0,0,1]^T$，也可通过运行时参数设置
@@ -759,10 +760,10 @@ M&J_{a,f}^T\\
 J_{a,f}&0
 \end{bmatrix}
 \begin{bmatrix}
-\ddot q\\T
+\ddot q\\
+T
 \end{bmatrix}
-=
-\begin{bmatrix}
+=\begin{bmatrix}
 Q-h\\
 \ddot y_{\mathrm{cmd}}-\dot J_a\dot q_a
 \end{bmatrix}.
@@ -786,11 +787,12 @@ M&-G\\
 A&0
 \end{bmatrix}
 \begin{bmatrix}
-\ddot q\\\lambda
+\ddot q\\
+\lambda
 \end{bmatrix}
-=
-\begin{bmatrix}
-Q-h\\b-\dot A\dot q
+=\begin{bmatrix}
+Q-h\\
+b-\dot A\dot q
 \end{bmatrix}.
 $$
 
