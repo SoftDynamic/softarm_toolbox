@@ -4,9 +4,8 @@ from pathlib import Path
 
 from ..actuation import ActuationModel
 from ..derive import SymbolicPlant
-from ..backends.session import SymbolicSession
 from .matlab import render_function, symbol_loads
-
+from .optimization import FunctionOptimizer
 
 _OPTIONAL_FILES = (
     "softarm_actuator_coordinates.m",
@@ -28,9 +27,7 @@ def generate_actuator_matlab(
     plant: SymbolicPlant,
     actuation: ActuationModel,
     output: str | Path,
-    backend: str = "sympy",
-    wolfram_kernel: str | None = None,
-    symbolic: SymbolicSession | None = None,
+    optimizer: FunctionOptimizer,
 ) -> Path:
     target = Path(output).resolve()
     target.mkdir(parents=True, exist_ok=True)
@@ -48,9 +45,7 @@ def generate_actuator_matlab(
         actuation.coordinates.shape,
         ["q", "p"],
         common,
-        backend,
-        wolfram_kernel,
-        symbolic,
+        optimizer,
     )
     render_function(
         target / "softarm_actuator_jacobian.m",
@@ -60,9 +55,7 @@ def generate_actuator_matlab(
         actuation.jacobian.shape,
         ["q", "p"],
         common,
-        backend,
-        wolfram_kernel,
-        symbolic,
+        optimizer,
     )
     render_function(
         target / "softarm_actuator_velocity_bias.m",
@@ -72,9 +65,7 @@ def generate_actuator_matlab(
         actuation.velocity_bias.shape,
         ["q", "dq", "p"],
         q_loads + dq_loads + p_loads,
-        backend,
-        wolfram_kernel,
-        symbolic,
+        optimizer,
     )
 
     unilateral = [

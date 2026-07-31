@@ -2,15 +2,14 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import sys
+from pathlib import Path
 
-from .codegen import generate_matlab_bundle
 from .actuation import derive_actuation
-from .constraints import derive_constraint
 from .config import ConfigError, load_config
+from .constraints import derive_constraint
 from .derive import derive
-from .backends.session import create_session
+from .pipeline import BuildOptions, build_bundle, symbolic_plan
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -22,6 +21,21 @@ def _parser() -> argparse.ArgumentParser:
     build.add_argument("--target", choices=("matlab",), default="matlab")
     build.add_argument("--out", required=True)
     build.add_argument("--wolfram-kernel")
+    build.add_argument(
+        "--wolfram-timeout",
+        type=float,
+        help="seconds allowed for each explicitly selected Wolfram operation",
+    )
+    build.add_argument(
+        "--wolfram-cse",
+        action="store_true",
+        help="use experimental Wolfram CSE; failures stop the build",
+    )
+    build.add_argument(
+        "--wolfram-factor-terms",
+        action="store_true",
+        help="run Wolfram FactorTerms before CSE; may increase build time",
+    )
     build.add_argument(
         "--tex-appendix",
         action="store_true",
@@ -51,21 +65,30 @@ def main(argv: list[str] | None = None) -> int:
             manifest = Path(args.bundle, "manifest.json")
             print(json.dumps(json.loads(manifest.read_text(encoding="utf-8")), indent=2))
             return 0
-        config = load_config(args.config)
-        with create_session(args.backend, args.wolfram_kernel) as symbolic:
-            plant = derive(config, symbolic=symbolic)
-            actuation = derive_actuation(plant, symbolic=symbolic)
-            constraint = derive_constraint(plant, symbolic=symbolic)
-            output = generate_matlab_bundle(
-                plant,
-                args.out,
-                args.backend,
-                args.wolfram_kernel,
-                actuation,
-                constraint,
-                args.tex_appendix,
-                symbolic,
+        wolfram_option_selected = (
+            args.wolfram_kernel is not None
+            or args.wolfram_timeout is not None
+            or args.wolfram_cse
+            or args.wolfram_factor_terms
+        )
+        if args.backend != "wolfram" and wolfram_option_selected:
+            raise ValueError(
+                "--wolfram-kernel, --wolfram-timeout, --wolfram-cse, and "
+                "--wolfram-factor-terms require --backend wolfram"
             )
+        options = BuildOptions(
+            backend=args.backend,
+            wolfram_kernel=args.wolfram_kernel,
+            wolfram_timeout=(
+                600.0 if args.wolfram_timeout is None else args.wolfram_timeout
+            ),
+            wolfram_cse=args.wolfram_cse,
+            wolfram_factor_terms=args.wolfram_factor_terms,
+            tex_appendix=args.tex_appendix,
+        )
+        config = load_config(args.config)
+        print(symbolic_plan(options))
+        output = build_bundle(config, args.out, options)
         print(output)
         return 0
     except (ConfigError, RuntimeError, OSError, ValueError) as error:

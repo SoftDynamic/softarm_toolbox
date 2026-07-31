@@ -2,7 +2,7 @@
 
 ClearAll[
   resetRequest, fromSymbol, fromGraph, toGraph, installDerivatives,
-  requestParameter, requestTimeout, executeRequest, writeResponse, cseData
+  requestParameter, requestTimeout, executeRequest, cseData
 ];
 
 resetRequest[] := (
@@ -119,11 +119,10 @@ requestTimeout[request_] := N[Lookup[request, "timeout", 600.0]];
 cseData[expressions_List, prefix_String] := Module[
   {optimized, held, tree, parsed, locals, body, assignments, reduced,
    replacementRules, names},
-  optimized = TimeConstrained[
+  optimized = Quiet[Check[
     Experimental`OptimizeExpression[expressions],
-    60,
     $Failed
-  ];
+  ]];
   If[optimized === $Failed, Return[$Failed]];
   held = optimized /.
     Experimental`OptimizedExpression[value_] :> HoldComplete[value];
@@ -152,8 +151,7 @@ cseData[expressions_List, prefix_String] := Module[
 ];
 
 executeRequest[request_Association] := Module[
-  {operation, expressions, variables, values, lower, upper, result,
-   timeout, rows, columns, data},
+  {operation, expressions, variables, result, timeout, data},
   If[Lookup[request, "schema", 0] != 2,
     Return[<|"ok" -> False, "error" -> "unsupported protocol schema"|>]
   ];
@@ -166,24 +164,10 @@ executeRequest[request_Association] := Module[
     Assuming[
       And @@ assumptions,
       Switch[operation,
-        "optimize", FactorTerms /@ expressions,
+        "factor_terms", FactorTerms /@ expressions,
         "differentiate",
           variables = fromGraph[request["parameters"]["variables"]];
           Flatten[D[expressions, {variables}]],
-        "integrate",
-          variables = {First[fromGraph[request["parameters"]["variable"]]]};
-          lower = First[fromGraph[request["parameters"]["lower"]]];
-          upper = First[fromGraph[request["parameters"]["upper"]]];
-          Integrate[#, {First[variables], lower, upper},
-            Assumptions -> And @@ assumptions] & /@ expressions,
-        "substitute",
-          variables = fromGraph[request["parameters"]["variables"]];
-          values = fromGraph[request["parameters"]["values"]];
-          (# /. Thread[variables -> values]) & /@ expressions,
-        "rank",
-          rows = requestParameter[request, "rows"];
-          columns = requestParameter[request, "cols"];
-          MatrixRank[Partition[expressions, columns]],
         "cse",
           data = cseData[
             expressions,
@@ -201,7 +185,6 @@ executeRequest[request_Association] := Module[
       "error" -> ("operation failed or timed out: " <> operation)|>]
   ];
   Switch[operation,
-    "rank", <|"ok" -> True, "rank" -> result|>,
     "cse",
       If[AssociationQ[result],
         Join[<|"ok" -> True|>, result],
@@ -210,12 +193,6 @@ executeRequest[request_Association] := Module[
     _, <|"ok" -> True, "expressions" -> toGraph[result]|>
   ]
 ];
-
-writeResponse[response_Association] := (
-  WriteString[$Output,
-    ExportString[response, "RawJSON", "Compact" -> True], "\n"];
-  Flush[$Output];
-);
 
 softarmExecuteJSON[text_String] := Module[{request},
   request = Quiet[Check[ImportString[text, "RawJSON"], $Failed]];
@@ -229,89 +206,6 @@ softarmExecuteJSON[text_String] := Module[{request},
 ];
 
 If[!TrueQ[$SoftArmLibraryMode],
- If[Last[$CommandLine] === "--server",
-  writeResponse[<|"ok" -> True, "version" -> $Version|>];
-  standardInput = InputStream["stdin", 1];
-  While[True,
-    line = ReadLine[standardInput];
-    If[line === EndOfFile, Break[]];
-    request = Quiet[Check[ImportString[line, "RawJSON"], $Failed]];
-    If[request === $Failed,
-      writeResponse[<|"ok" -> False,
-        "error" -> ("invalid JSON request: " <>
-          StringTake[ToString[line, InputForm], UpTo[240]])|>];
-      Continue[]
-    ];
-    If[Lookup[request, "operation", ""] === "close", Break[]];
-    response = Quiet[Check[
-      executeRequest[request],
-      <|"ok" -> False, "error" -> "unhandled Wolfram evaluation error"|>
-    ]];
-    writeResponse[response];
-  ];
-  Exit[0]
-];
-
-(* Backward-compatible one-shot optimizer used by older callers. *)
-args = Take[$CommandLine, -2];
-If[Length[args] != 2,
-  Print["expected input and output paths"];
+  Print["wolfram_bridge.wls is a library loaded by the Python backend"];
   Exit[2]
-];
-payload = Import[args[[1]], "RawJSON"];
-symbolByOriginal = <||>;
-originalBySymbol = <||>;
-fromLegacy[node_Association] := Module[{head = node["head"], values},
-  Switch[head,
-    "symbol",
-      If[!KeyExistsQ[symbolByOriginal, node["name"]],
-        AssociateTo[symbolByOriginal,
-          node["name"] -> ("saSymbol" <> ToString[Length[symbolByOriginal] + 1])];
-        AssociateTo[originalBySymbol,
-          symbolByOriginal[node["name"]] -> node["name"]]
-      ];
-      Symbol[symbolByOriginal[node["name"]]],
-    "integer", ToExpression[node["value"], InputForm],
-    "rational",
-      ToExpression[node["numerator"], InputForm]/
-        ToExpression[node["denominator"], InputForm],
-    "real", ToExpression[node["value"], InputForm],
-    _,
-      values = fromLegacy /@ Lookup[node, "args", {}];
-      Switch[head,
-        "add", Plus @@ values, "mul", Times @@ values,
-        "pow", Power @@ values, "sin", Sin @@ values,
-        "cos", Cos @@ values, "abs", Abs @@ values,
-        _, Apply[Symbol[head], values]
-      ]
-  ]
-];
-toLegacy[value_Integer] :=
-  <|"head" -> "integer", "value" -> ToString[value, InputForm]|>;
-toLegacy[value_Rational] :=
-  <|"head" -> "rational", "numerator" -> ToString[Numerator[value]],
-    "denominator" -> ToString[Denominator[value]]|>;
-toLegacy[value_Real] :=
-  <|"head" -> "real", "value" -> ToString[value, InputForm]|>;
-toLegacy[value_Symbol] := Module[{name = SymbolName[Unevaluated[value]]},
-  <|"head" -> "symbol", "name" -> Lookup[originalBySymbol, name, name]|>
-];
-toLegacy[value_Plus] :=
-  <|"head" -> "add", "args" -> (toLegacy /@ (List @@ value))|>;
-toLegacy[value_Times] :=
-  <|"head" -> "mul", "args" -> (toLegacy /@ (List @@ value))|>;
-toLegacy[value_Power] :=
-  <|"head" -> "pow", "args" -> (toLegacy /@ (List @@ value))|>;
-toLegacy[value_Sin] := <|"head" -> "sin", "args" -> {toLegacy[value[[1]]]}|>;
-toLegacy[value_Cos] := <|"head" -> "cos", "args" -> {toLegacy[value[[1]]]}|>;
-toLegacy[value_Abs] := <|"head" -> "abs", "args" -> {toLegacy[value[[1]]]}|>;
-toLegacy[value_] :=
-  <|"head" -> SymbolName[Head[value]],
-    "args" -> (toLegacy /@ (List @@ value))|>;
-expressions = fromLegacy /@ payload["expressions"];
-optimized = TimeConstrained[FactorTerms /@ expressions, 600, $Failed];
-If[optimized === $Failed, Print["optimization timed out"]; Exit[3]];
-Export[args[[2]],
-  <|"expressions" -> (toLegacy /@ optimized)|>, "RawJSON"];
-Exit[0];
 ];

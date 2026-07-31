@@ -3,7 +3,10 @@ import sympy as sp
 
 from softarm.geometry import cosserat_pcs_transform, pcc_transform
 from softarm.special import (
-    LAMBDA_MODULES, Sinc3Sqrt, Sinc3SqrtD, Sinc3SqrtDD,
+    LAMBDA_MODULES,
+    Sinc3Sqrt,
+    Sinc3SqrtD,
+    Sinc3SqrtDD,
 )
 
 

@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 import sympy as sp
 
-from .backends.session import SymbolicSession
 from .config import ConstraintConfig
 from .derive import RuntimeParameter, SymbolicPlant
 
@@ -49,9 +48,7 @@ ConstraintBuilder = Callable[[SymbolicPlant, ConstraintConfig], ConstraintModel]
 def _plane_point_contact_builder(
     plant: SymbolicPlant,
     config: ConstraintConfig,
-    symbolic: SymbolicSession | None = None,
 ) -> ConstraintModel:
-    executor = symbolic or plant._symbolic or SymbolicSession()
     data = config.data
     parameters: list[RuntimeParameter] = []
 
@@ -82,13 +79,11 @@ def _plane_point_contact_builder(
     end_rotation = plant.end_transform[:3, :3]
     end_position = plant.end_transform[:3, 3]
     contact_position = end_position + end_rotation * tool_offset
-    point_jacobian = executor.jacobian(contact_position, list(plant.q))
+    point_jacobian = contact_position.jacobian(plant.q)
     gap = sp.Matrix([(normal.T * (contact_position - plane_point))[0]])
-    jacobian = executor.jacobian(gap, list(plant.q))
+    jacobian = gap.jacobian(plant.q)
     velocity_bias = (
-        executor.jacobian(
-            executor.optimize_matrix(jacobian * plant.dq), list(plant.q)
-        )
+        (jacobian * plant.dq).jacobian(plant.q)
         * plant.dq
     )
     point_velocity = point_jacobian * plant.dq
@@ -127,7 +122,6 @@ def register_constraint(name: str, builder: ConstraintBuilder) -> None:
 def derive_constraint(
     plant: SymbolicPlant,
     config: ConstraintConfig | None = None,
-    symbolic: SymbolicSession | None = None,
 ) -> ConstraintModel | None:
     selected = config if config is not None else plant.config.constraint
     if selected is None:
@@ -136,12 +130,7 @@ def derive_constraint(
         builder = _CONSTRAINT_BUILDERS[selected.family]
     except KeyError as error:
         raise ValueError(f"unregistered constraint family: {selected.family}") from error
-    executor = symbolic or plant._symbolic or SymbolicSession()
-    result = (
-        _plane_point_contact_builder(plant, selected, executor)
-        if selected.family == "plane_point_contact"
-        else builder(plant, selected)
-    )
+    result = builder(plant, selected)
     m, nq = result.count, len(plant.q)
     expected = {
         "coordinates": ((m, 1), result.coordinates.shape),

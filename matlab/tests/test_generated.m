@@ -5,6 +5,8 @@ end
 function setupOnce(testCase)
 root = fileparts(fileparts(fileparts(mfilename("fullpath"))));
 addpath(fullfile(root,"matlab"));
+addpath(fullfile(root,"matlab","simulink"));
+addpath(fullfile(root,"examples","simulink"));
 testCase.TestData.root = root;
 end
 
@@ -178,19 +180,25 @@ end
 
 function testActuatorSlxArtifacts(testCase)
 root = testCase.TestData.root;
-files = [ ...
+libraryDirectory = fullfile(root,"matlab","simulink");
+exampleDirectory = fullfile(root,"examples","simulink");
+libraryFiles = [ ...
     "softarm_plant.slx", ...
     "softarm_actuator_force_block.slx", ...
     "softarm_actuator_acceleration_block.slx", ...
+    "softarm_constrained_plant.slx"];
+exampleFiles = [ ...
     "softarm_tendon_force_demo.slx", ...
     "softarm_tendon_acceleration_demo.slx", ...
-    "softarm_constrained_plant.slx", ...
     "softarm_flying_contact_demo.slx"];
-for file = files
-verifyTrue(testCase,isfile(fullfile(root,file)));
+for file = libraryFiles
+verifyTrue(testCase,isfile(fullfile(libraryDirectory,file)));
+end
+for file = exampleFiles
+verifyTrue(testCase,isfile(fullfile(exampleDirectory,file)));
 end
 
-load_system(fullfile(root,"softarm_plant.slx"));
+load_system(fullfile(libraryDirectory,"softarm_plant.slx"));
 cleanupPlant = onCleanup(@() close_system("softarm_plant",0));
 mask = Simulink.Mask.get("softarm_plant");
 verifyNotEmpty(testCase,mask);
@@ -200,13 +208,13 @@ outputs = rootOutports("softarm_plant");
 verifyEqual(testCase,outputs, ...
     ["q_out","dq_out","tip_pose","diagnostic","backbone_poses"]);
 
-load_system(fullfile(root,"softarm_constrained_plant.slx"));
+load_system(fullfile(libraryDirectory,"softarm_constrained_plant.slx"));
 cleanupConstrained = onCleanup(@() close_system("softarm_constrained_plant",0));
 outputs = rootOutports("softarm_constrained_plant");
 verifyEqual(testCase,outputs,["q_out","dq_out","tip_pose","reaction", ...
     "is_feasible","constraint_rcond","backbone_poses"]);
 
-load_system(fullfile(root,"softarm_tendon_force_demo.slx"));
+load_system(fullfile(exampleDirectory,"softarm_tendon_force_demo.slx"));
 cleanupForce = onCleanup(@() close_system("softarm_tendon_force_demo",0));
 references = find_system("softarm_tendon_force_demo", ...
     "LookUnderMasks","all","BlockType","ModelReference");
@@ -222,7 +230,7 @@ verifyTrue(testCase,isfile(fullfile(root,"matlab","softarm_pose_playback.m")));
 verifyTrue(testCase,isfile(fullfile(root,"matlab","+softarm", ...
     "playbackBackbonePoses.m")));
 
-load_system(fullfile(root,"softarm_tendon_acceleration_demo.slx"));
+load_system(fullfile(exampleDirectory,"softarm_tendon_acceleration_demo.slx"));
 cleanupAcceleration = onCleanup(@() close_system( ...
     "softarm_tendon_acceleration_demo",0));
 references = find_system("softarm_tendon_acceleration_demo", ...
@@ -234,7 +242,7 @@ verifyQLog(testCase,"softarm_tendon_acceleration_demo","Plant");
 verifyEqual(testCase,get_param( ...
     "softarm_tendon_acceleration_demo","ReturnWorkspaceOutputs"),'off');
 
-load_system(fullfile(root,"softarm_flying_contact_demo.slx"));
+load_system(fullfile(exampleDirectory,"softarm_flying_contact_demo.slx"));
 cleanupContact = onCleanup(@() close_system( ...
     "softarm_flying_contact_demo",0));
 verifyQLog(testCase,"softarm_flying_contact_demo","Constrained Plant");

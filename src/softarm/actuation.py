@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 import sympy as sp
 
-from .backends.session import SymbolicSession
 from .config import ActuationConfig
 from .derive import RuntimeParameter, SymbolicPlant
 from .geometry import polynomial
@@ -50,9 +49,7 @@ def _parameter_by_name(plant: SymbolicPlant) -> dict[str, sp.Symbol]:
 def _tendon_builder(
     plant: SymbolicPlant,
     config: ActuationConfig,
-    symbolic: SymbolicSession | None = None,
 ) -> ActuationModel:
-    executor = symbolic or plant._symbolic or SymbolicSession()
     if not config.channels:
         raise ValueError("tendon actuation requires at least one channel")
     parameters: list[RuntimeParameter] = []
@@ -63,8 +60,8 @@ def _tendon_builder(
     if plant.config.family == "euler":
         psi_x = polynomial(plant.config.ritz_x or (), xi)
         psi_y = polynomial(plant.config.ritz_y or (), xi)
-        slope_x = executor.substitute(executor.diff(psi_x, xi), {xi: sp.S.One})
-        slope_y = executor.substitute(executor.diff(psi_y, xi), {xi: sp.S.One})
+        slope_x = sp.diff(psi_x, xi).subs(xi, sp.S.One)
+        slope_y = sp.diff(psi_y, xi).subs(xi, sp.S.One)
 
     for channel in config.channels:
         coordinate = sp.S.Zero
@@ -120,12 +117,9 @@ def _tendon_builder(
         coordinates.append(coordinate)
 
     coordinate_matrix = sp.Matrix(coordinates)
-    jacobian = executor.jacobian(coordinate_matrix, list(plant.arm_q))
+    jacobian = coordinate_matrix.jacobian(plant.arm_q)
     velocity_bias = (
-        executor.jacobian(
-            executor.optimize_matrix(jacobian * plant.arm_dq),
-            list(plant.arm_q),
-        )
+        (jacobian * plant.arm_dq).jacobian(plant.arm_q)
         * plant.arm_dq
     )
     return ActuationModel(
@@ -173,12 +167,7 @@ def _validate_strict_rank(plant: SymbolicPlant, actuation: ActuationModel) -> No
     def nearly_zero(value: sp.Expr) -> bool:
         return abs(complex(value)) <= 1e-10
 
-    symbolic = plant._symbolic or SymbolicSession()
-    rank = (
-        nominal.rank(iszerofunc=nearly_zero)
-        if symbolic.backend == "sympy"
-        else symbolic.rank(nominal)
-    )
+    rank = nominal.rank(iszerofunc=nearly_zero)
     if rank != actuation.count:
         raise ValueError("strict actuator acceleration requires a full-row-rank nominal Jacobian")
 
@@ -186,7 +175,6 @@ def _validate_strict_rank(plant: SymbolicPlant, actuation: ActuationModel) -> No
 def derive_actuation(
     plant: SymbolicPlant,
     config: ActuationConfig | None = None,
-    symbolic: SymbolicSession | None = None,
 ) -> ActuationModel | None:
     """Derive an optional actuator model without changing the base plant."""
     selected = config if config is not None else plant.config.actuation
@@ -196,12 +184,7 @@ def derive_actuation(
         builder = _ACTUATOR_BUILDERS[selected.family]
     except KeyError as error:
         raise ValueError(f"unregistered actuator family: {selected.family}") from error
-    executor = symbolic or plant._symbolic or SymbolicSession()
-    result = (
-        _tendon_builder(plant, selected, executor)
-        if selected.family == "tendon"
-        else builder(plant, selected)
-    )
+    result = builder(plant, selected)
     if result.coordinates.shape != (result.count, 1):
         raise ValueError("actuator builder returned inconsistent coordinate dimensions")
     if result.jacobian.shape != (result.count, len(plant.arm_q)):

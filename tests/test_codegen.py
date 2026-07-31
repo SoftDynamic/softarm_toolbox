@@ -3,17 +3,20 @@ from pathlib import Path
 
 import sympy as sp
 
-from softarm.ast import decode, encode
-from softarm.codegen import generate_matlab_bundle
 from softarm import derive_actuation, load_config
+from softarm.backends.protocol import decode_dag, encode_dag
+from softarm.codegen import generate_matlab_bundle
 from softarm.config import (
-    ActuationConfig, ConstraintConfig, IntegrationConfig, ModelConfig, TendonChannelConfig,
+    ActuationConfig,
+    ConstraintConfig,
+    IntegrationConfig,
+    ModelConfig,
+    TendonChannelConfig,
     TendonSpanConfig,
 )
+from softarm.constraints import derive_constraint
 from softarm.derive import derive
 from softarm.geometry import cosserat_pcs_transform
-from softarm.constraints import derive_constraint
-
 
 ROOT = Path(__file__).parents[1]
 
@@ -25,11 +28,11 @@ def _small_plant():
     ))
 
 
-def test_ast_round_trip_has_no_metadata():
+def test_ast_round_trip_uses_the_current_dag_schema():
     plant = _small_plant()
-    node = encode(plant.mass[0, 0])
-    assert "version" not in node
-    assert decode(node) == plant.mass[0, 0]
+    graph = encode_dag([plant.mass[0, 0]])
+    assert set(graph) == {"nodes", "roots"}
+    assert decode_dag(graph) == [plant.mass[0, 0]]
 
 
 def test_ast_round_trip_preserves_cosserat_special_functions():
@@ -37,7 +40,7 @@ def test_ast_round_trip_preserves_cosserat_special_functions():
     expression = cosserat_pcs_transform(
         sp.Matrix(symbols[:3]), sp.Matrix(symbols[3:6]), symbols[6]
     )[0, 3]
-    assert decode(encode(expression)) == expression
+    assert decode_dag(encode_dag([expression])) == [expression]
 
 
 def test_minimal_manifest_and_fixed_functions(tmp_path):

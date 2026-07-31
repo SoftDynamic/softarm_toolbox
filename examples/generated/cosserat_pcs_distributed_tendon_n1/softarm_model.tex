@@ -46,7 +46,7 @@ The arm base is fixed, hence $\boldsymbol q_B$ is empty.
 \end{equation}
 
 \begin{equation}
-\boldsymbol q=\begin{bmatrix}\boldsymbol q_B\\\boldsymbol q_a\end{bmatrix},\qquad\dot{\boldsymbol q}=\begin{bmatrix}\dot{\boldsymbol q}_B\\\dot{\boldsymbol q}_a\end{bmatrix}
+\boldsymbol q=\begin{bmatrix}\boldsymbol q_B\\\boldsymbol q_a\end{bmatrix},\qquad \dot{\boldsymbol q}=\begin{bmatrix}\dot{\boldsymbol q}_B\\\dot{\boldsymbol q}_a\end{bmatrix}
 \end{equation}
 
 The NED world frame is used; gravity acts in the positive world $z$ direction.
@@ -64,12 +64,12 @@ $m_{1}$ & \texttt{s1\_mass} & $0.18$ \\
 $I_{xx,1}$ & \texttt{s1\_Ixx} & $0.0018$ \\
 $I_{yy,1}$ & \texttt{s1\_Iyy} & $0.0018$ \\
 $I_{zz,1}$ & \texttt{s1\_Izz} & $0.0001$ \\
-$\kappa_0_{x,1}$ & \texttt{s1\_kappa0\_x} & $0$ \\
-$\kappa_0_{y,1}$ & \texttt{s1\_kappa0\_y} & $0$ \\
-$\kappa_0_{z,1}$ & \texttt{s1\_kappa0\_z} & $0$ \\
-$\nu_0_{x,1}$ & \texttt{s1\_nu0\_x} & $0$ \\
-$\nu_0_{y,1}$ & \texttt{s1\_nu0\_y} & $0$ \\
-$\nu_0_{z,1}$ & \texttt{s1\_nu0\_z} & $1$ \\
+$\kappa_{0,x,1}$ & \texttt{s1\_kappa0\_x} & $0$ \\
+$\kappa_{0,y,1}$ & \texttt{s1\_kappa0\_y} & $0$ \\
+$\kappa_{0,z,1}$ & \texttt{s1\_kappa0\_z} & $0$ \\
+$\nu_{0,x,1}$ & \texttt{s1\_nu0\_x} & $0$ \\
+$\nu_{0,y,1}$ & \texttt{s1\_nu0\_y} & $0$ \\
+$\nu_{0,z,1}$ & \texttt{s1\_nu0\_z} & $1$ \\
 $EI_{x,1}$ & \texttt{s1\_EI\_x} & $1.1$ \\
 $EI_{y,1}$ & \texttt{s1\_EI\_y} & $1.1$ \\
 $GJ_{1}$ & \texttt{s1\_GJ} & $0.2$ \\
@@ -109,15 +109,15 @@ H_{BA}=\begin{bmatrix}1 & 0 & 0 & 0.0\\0 & 1 & 0 & 0.0\\0 & 0 & 1 & 0.0\\0 & 0 &
 
 The generalized coordinates are increments from the configured stress-free angular and linear strains.
 \begin{equation}
-\kappa_i=\kappa_{0,i}+\delta\kappa_i,\qquad\nu_i=\nu_{0,i}+\delta\nu_i
+\kappa_i=\kappa_{0,i}+\delta\kappa_i,\qquad \nu_i=\nu_{0,i}+\delta\nu_i
 \end{equation}
 
 \begin{equation}
-\Omega_i(\xi)=L_i\xi\widehat{\kappa_i},\qquadz_i(\xi)=(L_i\xi)^2\kappa_i^T\kappa_i
+\Omega_i(\xi)=L_i\xi\widehat{\kappa_i},\qquad z_i(\xi)=(L_i\xi)^2\kappa_i^T\kappa_i
 \end{equation}
 
 \begin{equation}
-R_i=I_3+\Sfun(z_i)\Omega_i+\Cfun(z_i)\Omega_i^2,\qquadr_i=\left[I_3+\Cfun(z_i)\Omega_i+\Tfun(z_i)\Omega_i^2\right]L_i\xi\nu_i
+R_i=I_3+\Sfun(z_i)\Omega_i+\Cfun(z_i)\Omega_i^2,\qquad r_i=\left[I_3+\Cfun(z_i)\Omega_i+\Tfun(z_i)\Omega_i^2\right]L_i\xi\nu_i
 \end{equation}
 
 \begin{equation}
@@ -129,7 +129,7 @@ H_{Wi}(\xi)=H_{WB}H_{BA}\left(\prod_{k=1}^{i-1}H_k(1)\right)H_i(\xi)
 \end{equation}
 
 \begin{equation}
-J_{v,i}=\frac{\partial r_{Wi}}{\partial\boldsymbol q},\qquadJ_{\omega,i}^{(:,j)}=\operatorname{vex}\!\left(\operatorname{skew}\!\left(\frac{\partial R_{Wi}}{\partial q_j}R_{Wi}^{T}\right)\right)
+J_{v,i}=\frac{\partial r_{Wi}}{\partial\boldsymbol q},\qquad J_{\omega,i}^{(:,j)}=\operatorname{vex}\!\left(\operatorname{skew}\!\left(\frac{\partial R_{Wi}}{\partial q_j}R_{Wi}^{T}\right)\right)
 \end{equation}
 
 \begin{equation}
@@ -177,7 +177,7 @@ h=c+\nabla_{\boldsymbol q}V+D\dot{\boldsymbol q}
 
 The vehicle wrench $w_B$ is expressed in the vehicle body frame, whereas the end wrench $w_e$ is expressed in the NED world frame.
 \begin{equation}
-Q=S_a\tau_a+B_v(\boldsymbol q)w_B+J_e^Tw_e,\qquadB_v=J_B^T\operatorname{diag}(R_{WB},R_{WB})
+Q=S_a\tau_a+B_v(\boldsymbol q)w_B+J_e^Tw_e,\qquad B_v=J_B^T\operatorname{diag}(R_{WB},R_{WB})
 \end{equation}
 
 \begin{equation}
@@ -185,7 +185,7 @@ M\ddot{\boldsymbol q}+h=Q\label{eq:dynamics}
 \end{equation}
 
 \begin{equation}
-\dot x=\begin{bmatrix}\dot{\boldsymbol q}\\M^{-1}(Q-h)\end{bmatrix},\qquadx=\begin{bmatrix}\boldsymbol q\\\dot{\boldsymbol q}\end{bmatrix}
+\dot x=\begin{bmatrix}\dot{\boldsymbol q}\\M^{-1}(Q-h)\end{bmatrix},\qquad x=\begin{bmatrix}\boldsymbol q\\\dot{\boldsymbol q}\end{bmatrix}
 \end{equation}
 
 
@@ -203,11 +203,11 @@ Channel & Type \\
 \end{tabular}
 \end{center}
 \begin{equation}
-y(\boldsymbol q_a)=\begin{bmatrix}L_{1} \sqrt{\left(\nu_0_{x,1} + \delta\nu_{x,1}\right)^{2} + \left(- r_{\mathrm{t1},1} \left(\delta\kappa_{y,1} + \kappa_0_{y,1}\right) + \nu_0_{z,1} + \delta\nu_{z,1}\right)^{2} + \left(r_{\mathrm{t1},1} \left(\delta\kappa_{z,1} + \kappa_0_{z,1}\right) + \nu_0_{y,1} + \delta\nu_{y,1}\right)^{2}}\\L_{1} \sqrt{\left(- 0.86602540378443874 r_{\mathrm{t2},1} \left(\delta\kappa_{z,1} + \kappa_0_{z,1}\right) + \nu_0_{x,1} + \delta\nu_{x,1}\right)^{2} + \left(- 0.49999999999999983 r_{\mathrm{t2},1} \left(\delta\kappa_{z,1} + \kappa_0_{z,1}\right) + \nu_0_{y,1} + \delta\nu_{y,1}\right)^{2} + \left(0.86602540378443874 r_{\mathrm{t2},1} \left(\delta\kappa_{x,1} + \kappa_0_{x,1}\right) + 0.49999999999999983 r_{\mathrm{t2},1} \left(\delta\kappa_{y,1} + \kappa_0_{y,1}\right) + \nu_0_{z,1} + \delta\nu_{z,1}\right)^{2}}\\L_{1} \sqrt{\left(- 0.50000000000000042 r_{\mathrm{t3},1} \left(\delta\kappa_{z,1} + \kappa_0_{z,1}\right) + \nu_0_{y,1} + \delta\nu_{y,1}\right)^{2} + \left(0.8660254037844384 r_{\mathrm{t3},1} \left(\delta\kappa_{z,1} + \kappa_0_{z,1}\right) + \nu_0_{x,1} + \delta\nu_{x,1}\right)^{2} + \left(- 0.8660254037844384 r_{\mathrm{t3},1} \left(\delta\kappa_{x,1} + \kappa_0_{x,1}\right) + 0.50000000000000042 r_{\mathrm{t3},1} \left(\delta\kappa_{y,1} + \kappa_0_{y,1}\right) + \nu_0_{z,1} + \delta\nu_{z,1}\right)^{2}}\end{bmatrix}
+y(\boldsymbol q_a)=\begin{bmatrix}L_{1} \sqrt{\left(\nu_{0,x,1} + \delta\nu_{x,1}\right)^{2} + \left(- r_{\mathrm{t1},1} \left(\delta\kappa_{y,1} + \kappa_{0,y,1}\right) + \nu_{0,z,1} + \delta\nu_{z,1}\right)^{2} + \left(r_{\mathrm{t1},1} \left(\delta\kappa_{z,1} + \kappa_{0,z,1}\right) + \nu_{0,y,1} + \delta\nu_{y,1}\right)^{2}}\\L_{1} \sqrt{\left(- 0.86602540378443874 r_{\mathrm{t2},1} \left(\delta\kappa_{z,1} + \kappa_{0,z,1}\right) + \nu_{0,x,1} + \delta\nu_{x,1}\right)^{2} + \left(- 0.49999999999999983 r_{\mathrm{t2},1} \left(\delta\kappa_{z,1} + \kappa_{0,z,1}\right) + \nu_{0,y,1} + \delta\nu_{y,1}\right)^{2} + \left(0.86602540378443874 r_{\mathrm{t2},1} \left(\delta\kappa_{x,1} + \kappa_{0,x,1}\right) + 0.49999999999999983 r_{\mathrm{t2},1} \left(\delta\kappa_{y,1} + \kappa_{0,y,1}\right) + \nu_{0,z,1} + \delta\nu_{z,1}\right)^{2}}\\L_{1} \sqrt{\left(- 0.50000000000000042 r_{\mathrm{t3},1} \left(\delta\kappa_{z,1} + \kappa_{0,z,1}\right) + \nu_{0,y,1} + \delta\nu_{y,1}\right)^{2} + \left(0.8660254037844384 r_{\mathrm{t3},1} \left(\delta\kappa_{z,1} + \kappa_{0,z,1}\right) + \nu_{0,x,1} + \delta\nu_{x,1}\right)^{2} + \left(- 0.8660254037844384 r_{\mathrm{t3},1} \left(\delta\kappa_{x,1} + \kappa_{0,x,1}\right) + 0.50000000000000042 r_{\mathrm{t3},1} \left(\delta\kappa_{y,1} + \kappa_{0,y,1}\right) + \nu_{0,z,1} + \delta\nu_{z,1}\right)^{2}}\end{bmatrix}
 \end{equation}
 
 \begin{equation}
-J_a=\frac{\partial y}{\partial\boldsymbol q_a},\qquad\gamma_a=\dot J_a\dot{\boldsymbol q}_a
+J_a=\frac{\partial y}{\partial\boldsymbol q_a},\qquad \gamma_a=\dot J_a\dot{\boldsymbol q}_a
 \end{equation}
 
 The actuator coordinates are tendon lengths, and positive $T$ denotes tendon tension.

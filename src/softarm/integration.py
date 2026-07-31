@@ -3,7 +3,6 @@ from __future__ import annotations
 import sympy as sp
 from sympy.integrals.quadrature import gauss_legendre
 
-from .backends.session import SymbolicSession
 from .config import IntegrationConfig
 
 
@@ -24,16 +23,14 @@ def integrate_unit(
     xi: sp.Symbol,
     config: IntegrationConfig,
     label: str,
-    symbolic: SymbolicSession | None = None,
 ):
-    executor = symbolic or SymbolicSession()
     if config.method == "gauss":
         result = expr * 0
         for node, weight in unit_gauss_rule(config):
-            result += weight * executor.substitute(expr, {xi: node})
+            result += weight * expr.subs({xi: node})
         return result
 
-    result = executor.integrate(expr, xi, sp.S.Zero, sp.S.One)
+    result = sp.integrate(expr, (xi, sp.S.Zero, sp.S.One))
     values = list(result) if isinstance(result, sp.MatrixBase) else [result]
     if any(value.has(sp.Integral) for value in values):
         raise IntegrationError(

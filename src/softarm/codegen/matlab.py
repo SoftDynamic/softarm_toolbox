@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 import sympy as sp
 from sympy.printing.octave import OctaveCodePrinter
 
-from ..backends.session import SymbolicSession, create_session
 from ..actuation import ActuationModel
 from ..constraints import ConstraintModel
 from ..derive import SymbolicPlant
+from .optimization import FunctionOptimizer
 
 
 class _MatlabPrinter(OctaveCodePrinter):
@@ -58,25 +58,21 @@ def render_function(
     shape: tuple[int, ...],
     inputs: list[str],
     loads: list[str],
-    backend: str,
-    wolfram_kernel: str | None,
-    symbolic: SymbolicSession | None = None,
+    optimizer: FunctionOptimizer,
 ) -> None:
-    owned = symbolic is None
-    executor = symbolic or create_session(backend, wolfram_kernel)
-    expressions = executor.optimize(_flatten(matrix))
-    replacements, reduced = executor.cse(expressions, prefix="t", order="none")
+    optimized = optimizer.optimize(_flatten(matrix), shape)
     printer = _MatlabPrinter()
     lines = [f"function {output_name} = {name}({','.join(inputs)})", "% Generated from the SymPy model. Do not edit.", "%#codegen"]
     lines.extend(loads)
-    lines.extend(f"{symbol} = {printer.doprint(expr)};" for symbol, expr in replacements)
-    vector = ";".join(printer.doprint(expr) for expr in reduced)
+    lines.extend(
+        f"{symbol} = {printer.doprint(expr)};"
+        for symbol, expr in optimized.replacements
+    )
+    vector = ";".join(printer.doprint(expr) for expr in optimized.expressions)
     dimensions = ",".join(str(item) for item in shape)
     lines.append(f"{output_name} = reshape([{vector}],{dimensions});")
     lines.append("end")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    if owned:
-        executor.close()
 
 
 _HELPERS = {
@@ -95,42 +91,32 @@ _HELPERS = {
 def generate_matlab_bundle(
     plant: SymbolicPlant,
     output: str | Path,
-    backend: str = "sympy",
-    wolfram_kernel: str | None = None,
     actuation: ActuationModel | None = None,
     constraint: ConstraintModel | None = None,
     tex_appendix: bool = False,
-    symbolic: SymbolicSession | None = None,
+    optimizer: FunctionOptimizer | None = None,
 ) -> Path:
-    executor = symbolic
-    if executor is None:
-        candidate = plant._symbolic
-        executor = (
-            candidate
-            if candidate is not None and candidate.backend == backend
-            else create_session(backend, wolfram_kernel)
-        )
-    owned = symbolic is None and executor is not plant._symbolic
+    function_optimizer = optimizer or FunctionOptimizer()
     target = Path(output).resolve()
     target.mkdir(parents=True, exist_ok=True)
     q_loads = symbol_loads(plant.q, "q")
     dq_loads = symbol_loads(plant.dq, "dq")
     p_loads = symbol_loads([item.symbol for item in plant.parameters], "p")
     common = q_loads + p_loads
-    render_function(target / "softarm_mass.m", "softarm_mass", "M", plant.mass, plant.mass.shape, ["q", "p"], common, backend, wolfram_kernel, executor)
-    render_function(target / "softarm_bias.m", "softarm_bias", "h", plant.bias, plant.bias.shape, ["q", "dq", "p"], q_loads + dq_loads + p_loads, backend, wolfram_kernel, executor)
+    render_function(target / "softarm_mass.m", "softarm_mass", "M", plant.mass, plant.mass.shape, ["q", "p"], common, function_optimizer)
+    render_function(target / "softarm_bias.m", "softarm_bias", "h", plant.bias, plant.bias.shape, ["q", "dq", "p"], q_loads + dq_loads + p_loads, function_optimizer)
     render_function(
         target / "softarm_kinematics.m", "softarm_kinematics", "H", plant.kinematics,
-        (4, 4, plant.config.segments), ["q", "p"], common, backend, wolfram_kernel, executor,
+        (4, 4, plant.config.segments), ["q", "p"], common, function_optimizer,
     )
     render_function(
         target / "softarm_end_jacobian.m", "softarm_end_jacobian", "J", plant.end_jacobian,
-        plant.end_jacobian.shape, ["q", "p"], common, backend, wolfram_kernel, executor,
+        plant.end_jacobian.shape, ["q", "p"], common, function_optimizer,
     )
     render_function(
         target / "softarm_vehicle_wrench_map.m", "softarm_vehicle_wrench_map", "Bv",
         plant.vehicle_wrench_map, plant.vehicle_wrench_map.shape, ["q", "p"], common,
-        backend, wolfram_kernel, executor,
+        function_optimizer,
     )
     (target / "softarm_applied_force.m").write_text(
         (
@@ -157,16 +143,15 @@ def generate_matlab_bundle(
 
     clear_actuator_functions(target)
     if actuation is not None:
-        generate_actuator_matlab(
-            plant, actuation, target, backend, wolfram_kernel, executor
-        )
+        generate_actuator_matlab(plant, actuation, target, function_optimizer)
     from .constraint_matlab import clear_constraint_functions, generate_constraint_matlab
 
     clear_constraint_functions(target)
     if constraint is not None:
         generate_constraint_matlab(
-            plant, constraint, target, backend, wolfram_kernel,
-            () if actuation is None else actuation.parameters, executor,
+            plant, constraint, target,
+            () if actuation is None else actuation.parameters,
+            function_optimizer,
         )
     runtime_parameters = (
         plant.parameters
@@ -211,10 +196,6 @@ def generate_matlab_bundle(
         actuation=actuation,
         constraint=constraint,
         include_appendix=tex_appendix,
-        backend=backend,
-        wolfram_kernel=wolfram_kernel,
-        symbolic=executor,
+        optimizer=function_optimizer,
     )
-    if owned:
-        executor.close()
     return target

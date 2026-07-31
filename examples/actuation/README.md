@@ -20,8 +20,9 @@ softarm build examples/config/euler_two_signed_pairs_n2.toml --out examples/gene
 
 ## Simulink 示例
 
-打开仓库根目录的 `softarm_tendon_force_demo.slx` 或
-`softarm_tendon_acceleration_demo.slx`。模型启动回调将加载 MATLAB 路径和默认的
+打开 `examples/simulink/softarm_tendon_force_demo.slx` 或
+`examples/simulink/softarm_tendon_acceleration_demo.slx`。模型启动回调将加载
+`matlab` 与 `matlab/simulink` 路径和默认的
 `pcc_three_tendon_extensible_n2` 生成包。
 
 拉力 Demo 中双击 `Tension command` 修改三维拉力向量；加速度 Demo 中双击
@@ -33,7 +34,7 @@ Bundle 选择位于 `softarm_plant.slx` 定义的 System Mask 中。双击 Demo 
 即可切换到两组 signed 绳索对驱动的 Euler 模型：
 
 ```matlab
-'examples/generated/euler_two_signed_pairs_n2'
+'../generated/euler_two_signed_pairs_n2'
 ```
 
 该字段采用 MATLAB 字符串表达式，因此路径使用单引号。切换后输入命令调整为
@@ -41,4 +42,4 @@ Bundle 选择位于 `softarm_plant.slx` 定义的 System Mask 中。双击 Demo 
 
 在自定义顶层模型中复用时，添加 Model block，选择
 `softarm_actuator_force_block` 或 `softarm_actuator_acceleration_block`，
-并按示例连接到 `softarm_plant`。
+并按示例连接到 `softarm_plant`。这些可复用模型位于 `matlab/simulink`。

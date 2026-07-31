@@ -2,4 +2,5 @@
 python = "C:\\Users\\username\\miniconda3\\envs\\matlab\\python.exe"
 wolfram_kernel = "C:\\Program Files\\Wolfram Research\\Wolfram\\15.0\\WolframKernel.exe"
 wolfram_math = "C:\\Program Files\\Wolfram Research\\Wolfram\\15.0\\math.exe"
-
+pdflatex = "C:\\texlive\\2026\\bin\\windows\\pdflatex.exe"
+pdflatex = "C:\\texlive\\2026\\bin\\windows\\pdflatex.exe"

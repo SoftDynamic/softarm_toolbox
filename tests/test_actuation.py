@@ -7,7 +7,6 @@ import sympy as sp
 from softarm import ActuationModel, derive, derive_actuation, load_config, register_actuator
 from softarm.config import ActuationConfig, TendonChannelConfig, TendonSpanConfig
 
-
 ROOT = Path(__file__).parents[1]
 
 
@@ -20,7 +19,10 @@ def _three_tendon():
 
 def _values(plant, actuation, q_values):
     return {
-        **{symbol: value for symbol, value in zip(plant.arm_q, q_values)},
+        **{
+            symbol: value
+            for symbol, value in zip(plant.arm_q, q_values, strict=True)
+        },
         **{item.symbol: item.default for item in plant.parameters + actuation.parameters},
     }
 

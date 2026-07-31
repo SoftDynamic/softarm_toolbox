@@ -1,11 +1,14 @@
-function build_softarm_constraint_models(outputDirectory)
+function build_softarm_constraint_models
 %BUILD_SOFTARM_CONSTRAINT_MODELS Build the generic constrained Plant and demo.
-arguments
-    outputDirectory (1,1) string = string(fileparts(fileparts(mfilename("fullpath"))))
-end
-if ~isfolder(outputDirectory), mkdir(outputDirectory); end
-buildConstrainedPlant(fullfile(outputDirectory,"softarm_constrained_plant.slx"));
-buildContactDemo(fullfile(outputDirectory,"softarm_flying_contact_demo.slx"));
+repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
+libraryDirectory = fullfile(repositoryRoot,"matlab","simulink");
+exampleDirectory = fullfile(repositoryRoot,"examples","simulink");
+if ~isfolder(libraryDirectory), mkdir(libraryDirectory); end
+if ~isfolder(exampleDirectory), mkdir(exampleDirectory); end
+if any(strcmp(strsplit(path,pathsep),libraryDirectory)), rmpath(libraryDirectory); end
+buildConstrainedPlant(fullfile(libraryDirectory,"softarm_constrained_plant.slx"));
+addpath(libraryDirectory);
+buildContactDemo(fullfile(exampleDirectory,"softarm_flying_contact_demo.slx"));
 end
 
 function prepare(model, stopTime)
@@ -13,7 +16,10 @@ if bdIsLoaded(model), close_system(model,0); end
 new_system(model);
 set_param(model,"Solver","ode15s","StopTime",stopTime);
 set_param(model,"PreLoadFcn", ...
-    "softarm_root=fileparts(get_param(bdroot,'FileName'));addpath(softarm_root);addpath(fullfile(softarm_root,'matlab'));");
+    "softarm_model_dir=fileparts(get_param(bdroot,'FileName'));" + ...
+    "softarm_root=fileparts(fileparts(softarm_model_dir));" + ...
+    "addpath(fullfile(softarm_root,'matlab'));" + ...
+    "addpath(fullfile(softarm_root,'matlab','simulink'));");
 end
 
 function addIn(model,name,position,dimension)
@@ -36,7 +42,8 @@ end
 function buildConstrainedPlant(outputPath)
 model = "softarm_constrained_plant";
 prepare(model,"5");
-defaultBundle = "examples/generated/pcc_flying_plane_contact_n1";
+defaultBundle = fullfile("..","..","examples","generated", ...
+    "pcc_flying_plane_contact_n1");
 modelWorkspace = get_param(model,"ModelWorkspace");
 assignin(modelWorkspace,"Bundle",char(defaultBundle));
 set_param(model,"ParameterArgumentNames","Bundle");
@@ -103,6 +110,7 @@ end
 function buildContactDemo(outputPath)
 model = "softarm_flying_contact_demo";
 prepare(model,"1");
+save_system(model,outputPath);
 set_param(model,"ReturnWorkspaceOutputs","off");
 set_param(model,"InitFcn", ...
     "softarm_root=fileparts(get_param(bdroot,'FileName'));addpath(fullfile(softarm_root,'matlab'));softarm.initModel(fullfile(softarm_root,'examples','generated','pcc_flying_plane_contact_n1'));");
@@ -117,7 +125,7 @@ add_block("simulink/Sources/Constant",model+"/Constraint acceleration", ...
 add_block("built-in/ModelReference",model+"/Constrained Plant", ...
     "ModelName","softarm_constrained_plant","Position",[230 45 420 230]);
 set_param(model+"/Constrained Plant","Bundle", ...
-    "'examples/generated/pcc_flying_plane_contact_n1'");
+    "'../generated/pcc_flying_plane_contact_n1'");
 names = ["q","dq","tip_pose","normal_reaction","contact_feasible","constraint_rcond"];
 for index = 1:numel(names)
     addOut(model,names(index),[525 25+42*index 555 45+42*index]);

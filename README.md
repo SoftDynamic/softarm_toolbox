@@ -53,9 +53,11 @@ MATLAB Engine         25.1.2
 Wolfram Mathematica   15.0.1
 ```
 
-Wolfram 后端为可选组件；默认后端为 SymPy。选择 Wolfram 后端时，一个持久
-Kernel 会话会覆盖模型推导、解析积分、表达式优化、CSE 和代码生成。模型公式
-仍只在 Python/SymPy builder 中维护，所有公共结果仍为 SymPy 表达式。
+Wolfram 后端为可选组件；默认后端为 SymPy。模型公式、几何装配、积分、执行器
+和约束始终由 Python/SymPy 构造。选择 Wolfram 后端时，一个持久 Kernel 负责
+bias 的批量求导；`FactorTerms` 和实验性 Wolfram CSE 必须分别通过命令行开关
+显式启用。所有公共结果仍为 SymPy 表达式，任何已选择的 Wolfram 操作失败都会
+终止构建，不会静默切换算法。
 
 ## 2. 安装与快速开始
 
@@ -66,9 +68,10 @@ python -m pip install -r requirements.lock
 python -m pip install -e .
 ```
 
-使用 Wolfram 后端时，可将 `.softarm.local.toml.example` 复制为
-`.softarm.local.toml`，并填写本机 Wolfram Kernel 路径；也可在构建命令中使用
-`--wolfram-kernel` 指定路径。
+可将 `.softarm.local.toml.example` 复制为 `.softarm.local.toml`，填写本机
+Python、Wolfram Kernel 和 `pdflatex` 路径。Wolfram Kernel 也可在构建命令中使用
+`--wolfram-kernel` 指定；仓库维护命令和 TeX 编译测试优先使用本机配置，避免误用
+系统中同名但版本不同的工具。
 
 ### 2.2 验证、生成与检查
 
@@ -81,7 +84,7 @@ softarm build examples/config/pcc_lumped_n2.toml \
 softarm inspect build/pcc
 ```
 
-Wolfram 表达式优化后端示例：
+使用 Wolfram 加速 bias 批量求导：
 
 ```shell
 softarm build examples/config/pcc_distributed_n2.toml \
@@ -89,6 +92,59 @@ softarm build examples/config/pcc_distributed_n2.toml \
   --target matlab \
   --out build/pcc-wolfram
 ```
+
+构建开始时会打印实际执行计划，例如：
+
+```text
+Symbolic plan: derive=SymPy, bias=Wolfram, FactorTerms=off, CSE=SymPy
+```
+
+### 2.3 Wolfram 优化开关
+
+默认情况下，代码生成使用稳定的 `sympy.cse`，且不运行 `FactorTerms`。以下
+开关会改变符号执行路径，因此只能与 `--backend wolfram` 一起显式使用：
+
+| 开关 | 作用 | 建议使用场景 |
+| --- | --- | --- |
+| `--wolfram-factor-terms` | 每个 MATLAB 函数在 CSE 前执行 Wolfram `FactorTerms` | 生成表达式明显过度展开时单独试用；可能显著变慢，也不保证减少临时量 |
+| `--wolfram-cse` | 用实验性 `Experimental\`OptimizeExpression` 代替 `sympy.cse` | SymPy CSE 已确认是主要瓶颈，或需要比较生成代码时单独试用 |
+| `--wolfram-timeout SECONDS` | 设置每项 Wolfram 操作的超时，默认 600 秒 | 已确认操作合理但默认时间不足时调整 |
+
+首次使用建议只选择 `--backend wolfram`。若仍需优化生成代码，分别试用两个
+开关并比较构建时间和 MATLAB 文件大小，不建议一开始同时开启。开关启用后，
+超时、不支持的实验性返回结构、非法临时量依赖或等价性校验失败都会直接报错。
+错误信息会给出关闭相应开关或调整超时的建议，但工具不会自动重试。
+
+例如只试用 `FactorTerms`：
+
+```shell
+softarm build examples/config/pcc_lumped_n2.toml \
+  --backend wolfram \
+  --wolfram-factor-terms \
+  --out build/pcc-factor-terms
+```
+
+例如只试用实验性 Wolfram CSE：
+
+```shell
+softarm build examples/config/euler_ritz_n2.toml \
+  --backend wolfram \
+  --wolfram-cse \
+  --out build/euler-wolfram-cse
+```
+
+本机参考性能（2026-07-31，`.softarm.local.toml` 指定的 Python 3.12.13、
+Wolfram 15.0，三个独立 Python 进程各启动一个冷 Kernel，表中为中位数）如下。
+这里的数字只帮助判断耗时位于哪个阶段，不会被程序用于自动选择策略：
+
+| 配置 | SymPy 模型推导 | Kernel 启动 | Wolfram bias | MATLAB 生成/CSE | 完整构建 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Euler N2 | 0.347 s | 7.302 s | 0.125 s | 0.067 s | 7.848 s |
+| PCC lumped N2 | 0.869 s | 7.138 s | 21.977 s | 2.810 s | 32.970 s |
+| PCC distributed N2 | 1.556 s | 7.407 s | 58.440 s | 5.804 s | 73.256 s |
+
+不同机器上的 Kernel 启动、许可证检查和 CSE 时间会变化，应在自己的构建环境
+分别测量。尤其不要因为某个配置较快，就同时打开两个实验开关。
 
 生成目录包含：
 
@@ -273,7 +329,7 @@ softarm build examples/config/euler_ritz_n2.toml \
   --tex-appendix
 ```
 
-`--tex-appendix` 将 CAS 优化后的
+`--tex-appendix` 将本次构建所选规范化与 CSE 策略处理后的
 $V,D,M,h,H_e,J_e,B_v$ 及适用的执行器、约束表达式加入附录。
 
 生成 PDF：
@@ -284,6 +340,8 @@ pdflatex softarm_model.tex
 ```
 
 TeX 文档依赖 `article`、`amsmath`、`amssymb`、`geometry` 和 `longtable`。
+测试会先查找 `PATH` 中的 `pdflatex`；若未找到，则读取
+`.softarm.local.toml` 的 `tools.pdflatex`。
 
 ## 5. MATLAB 接口
 
@@ -331,13 +389,13 @@ ddq = plant.forwardDynamics( ...
 
 | 模型 | 用途 |
 | --- | --- |
-| `softarm_plant.slx` | 无约束 Plant；输入软臂广义力、基座扳手和末端扳手 |
-| `softarm_constrained_plant.slx` | 约束 Plant；增加约束加速度并输出反力与可行性 |
-| `softarm_actuator_force_block.slx` | 绳索拉力到软臂广义力的 Model Reference |
-| `softarm_actuator_acceleration_block.slx` | 严格绳长加速度约束的 Model Reference |
-| `softarm_tendon_force_demo.slx` | 绳索拉力驱动示例 |
-| `softarm_tendon_acceleration_demo.slx` | 绳长加速度驱动示例 |
-| `softarm_flying_contact_demo.slx` | 浮动基座和平面单点接触示例 |
+| `matlab/simulink/softarm_plant.slx` | 无约束 Plant；输入软臂广义力、基座扳手和末端扳手 |
+| `matlab/simulink/softarm_constrained_plant.slx` | 约束 Plant；增加约束加速度并输出反力与可行性 |
+| `matlab/simulink/softarm_actuator_force_block.slx` | 绳索拉力到软臂广义力的 Model Reference |
+| `matlab/simulink/softarm_actuator_acceleration_block.slx` | 严格绳长加速度约束的 Model Reference |
+| `examples/simulink/softarm_tendon_force_demo.slx` | 绳索拉力驱动示例 |
+| `examples/simulink/softarm_tendon_acceleration_demo.slx` | 绳长加速度驱动示例 |
+| `examples/simulink/softarm_flying_contact_demo.slx` | 浮动基座和平面单点接触示例 |
 
 Plant 模型的 `Bundle` System Mask 用于选择生成包，并据此配置基座、软臂、
 参数、执行器和约束维数。`backbone_poses` 端口按列堆叠每段末端的世界系
@@ -347,8 +405,11 @@ $4\times4$ 齐次变换，输出维数为 $16N\times1$。
 即可切换模型，例如：
 
 ```matlab
-'examples/generated/euler_two_signed_pairs_n2'
+'../generated/euler_two_signed_pairs_n2'
 ```
+
+以上相对路径以 `examples/simulink` 中的 Demo 文件为基准。复用模型统一位于
+`matlab/simulink`；Demo 的加载回调会自动将该目录加入 MATLAB 路径。
 
 ### 6.1 姿态回放
 

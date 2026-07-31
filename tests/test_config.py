@@ -4,7 +4,6 @@ import pytest
 
 from softarm.config import ConfigError, load_config
 
-
 ROOT = Path(__file__).parents[1]
 
 

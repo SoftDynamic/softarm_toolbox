@@ -1,28 +1,50 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import re
 import shutil
 import subprocess
+import tomllib
+from pathlib import Path
 
 import pytest
-import sympy as sp
 
 from softarm.actuation import derive_actuation
+from softarm.cli import main as cli_main
 from softarm.codegen import generate_latex_document, generate_matlab_bundle
 from softarm.codegen import latex as latex_module
-from softarm.cli import main as cli_main
+from softarm.codegen.optimization import FunctionOptimizer
 from softarm.config import (
+    ActuationConfig,
     BaseConfig,
     ConstraintConfig,
     IntegrationConfig,
     ModelConfig,
     TendonChannelConfig,
     TendonSpanConfig,
-    ActuationConfig,
 )
 from softarm.constraints import derive_constraint
 from softarm.derive import derive
+
+ROOT = Path(__file__).parents[1]
+
+
+def _find_pdflatex() -> str | None:
+    executable = shutil.which("pdflatex")
+    local_config = ROOT / ".softarm.local.toml"
+    if executable is not None or not local_config.is_file():
+        return executable
+    with local_config.open("rb") as stream:
+        configured = tomllib.load(stream).get("tools", {}).get("pdflatex")
+    if isinstance(configured, str) and Path(configured).is_file():
+        return configured
+    return None
+
+
+PDFLATEX = _find_pdflatex()
+REFERENCE_TEX = tuple(sorted(
+    (ROOT / "examples" / "generated").glob("*/softarm_model.tex")
+))
 
 
 def _euler_config(**changes):
@@ -113,7 +135,9 @@ def test_exact_appendix_is_present_and_cse_reconstructs_outputs(tmp_path):
         plant.mass[0, 0], plant.mass[0, 1], plant.mass[1, 1],
         *list(plant.bias), *list(plant.end_jacobian),
     ]
-    replacements, reduced = latex_module._cse_data(expressions, "check", "sympy", None)
+    replacements, reduced = latex_module._cse_data(
+        expressions, (len(expressions),), FunctionOptimizer()
+    )
     assert latex_module._reconstruct_cse(replacements, reduced) == expressions
 
 
@@ -144,12 +168,32 @@ y = [0.0, 0.0, 1.5, -0.5]
     ).read_text(encoding="utf-8")
 
 
-@pytest.mark.skipif(shutil.which("pdflatex") is None, reason="pdflatex is not installed")
+@pytest.mark.skipif(PDFLATEX is None, reason="pdflatex is not configured")
 def test_generated_document_compiles_with_pdflatex(tmp_path):
     plant = derive(_euler_config())
     path = generate_latex_document(plant, tmp_path)
     result = subprocess.run(
-        ["pdflatex", "-interaction=nonstopmode", "-halt-on-error", path.name],
+        [PDFLATEX, "-interaction=nonstopmode", "-halt-on-error", path.name],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.skipif(PDFLATEX is None, reason="pdflatex is not configured")
+@pytest.mark.parametrize("source", REFERENCE_TEX, ids=lambda path: path.parent.name)
+def test_reference_documents_compile_with_pdflatex(source, tmp_path):
+    result = subprocess.run(
+        [
+            PDFLATEX,
+            "-interaction=nonstopmode",
+            "-halt-on-error",
+            "-file-line-error",
+            str(source),
+        ],
         cwd=tmp_path,
         capture_output=True,
         text=True,
@@ -167,6 +211,10 @@ def test_cosserat_document_describes_pcs_and_lumped_inertia(tmp_path):
     generate_latex_document(plant, tmp_path)
     text = (tmp_path / "softarm_model.tex").read_text(encoding="utf-8")
     assert "Cosserat Piecewise-Constant-Strain Section" in text
+    assert r"\kappa_{0,x,1}" in text
+    assert r"\nu_{0,z,1}" in text
+    assert r"\kappa_0_{x,1}" not in text
+    assert re.search(r"\\qquad[A-Za-z]", text) is None
     assert r"\Tfun" in text
     assert "lumped inertia option" in text
     assert r"GA_{x,i}" in text and r"GJ_i" in text

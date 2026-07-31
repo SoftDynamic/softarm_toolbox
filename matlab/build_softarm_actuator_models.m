@@ -1,13 +1,16 @@
-function build_softarm_actuator_models(outputDirectory)
+function build_softarm_actuator_models
 %BUILD_SOFTARM_ACTUATOR_MODELS Build reusable actuator models and GUI demos.
-arguments
-    outputDirectory (1,1) string = string(fileparts(fileparts(mfilename("fullpath"))))
-end
-if ~isfolder(outputDirectory), mkdir(outputDirectory); end
-buildForceActuator(fullfile(outputDirectory,"softarm_actuator_force_block.slx"));
-buildAccelerationActuator(fullfile(outputDirectory,"softarm_actuator_acceleration_block.slx"));
-buildForceDemo(fullfile(outputDirectory,"softarm_tendon_force_demo.slx"));
-buildAccelerationDemo(fullfile(outputDirectory,"softarm_tendon_acceleration_demo.slx"));
+repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
+libraryDirectory = fullfile(repositoryRoot,"matlab","simulink");
+exampleDirectory = fullfile(repositoryRoot,"examples","simulink");
+if ~isfolder(libraryDirectory), mkdir(libraryDirectory); end
+if ~isfolder(exampleDirectory), mkdir(exampleDirectory); end
+if any(strcmp(strsplit(path,pathsep),libraryDirectory)), rmpath(libraryDirectory); end
+buildForceActuator(fullfile(libraryDirectory,"softarm_actuator_force_block.slx"));
+buildAccelerationActuator(fullfile(libraryDirectory,"softarm_actuator_acceleration_block.slx"));
+addpath(libraryDirectory);
+buildForceDemo(fullfile(exampleDirectory,"softarm_tendon_force_demo.slx"));
+buildAccelerationDemo(fullfile(exampleDirectory,"softarm_tendon_acceleration_demo.slx"));
 end
 
 function code = actuatorInit(requireAcceleration)
@@ -15,13 +18,19 @@ condition = "assert(~isempty(softarm_loaded.actuation),'softarm:MissingActuation
 if requireAcceleration
     condition = condition + "assert(isfield(softarm_loaded.actuation,'acceleration'),'softarm:MissingAcceleration','Selected bundle has no strict acceleration mapping.');";
 end
-code = "softarm_root=fileparts(get_param(bdroot,'FileName'));addpath(fullfile(softarm_root,'matlab'));" + ...
+code = "softarm_model_dir=fileparts(get_param(bdroot,'FileName'));" + ...
+    "softarm_root=fileparts(fileparts(softarm_model_dir));" + ...
+    "addpath(fullfile(softarm_root,'matlab'));" + ...
+    "addpath(fullfile(softarm_root,'matlab','simulink'));" + ...
     "if evalin('base','exist(''softarm_bundle'',''var'')'),softarm_selected_bundle=evalin('base','softarm_bundle');else,softarm_selected_bundle=fullfile(softarm_root,'examples','generated','pcc_three_tendon_extensible_n2');end;" + ...
     "softarm_loaded=softarm.initModel(string(softarm_selected_bundle));" + condition;
 end
 
 function code = demoInit(requirement)
-code = "softarm_root=fileparts(get_param(bdroot,'FileName'));addpath(fullfile(softarm_root,'matlab'));" + ...
+code = "softarm_model_dir=fileparts(get_param(bdroot,'FileName'));" + ...
+    "softarm_root=fileparts(fileparts(softarm_model_dir));" + ...
+    "addpath(fullfile(softarm_root,'matlab'));" + ...
+    "addpath(fullfile(softarm_root,'matlab','simulink'));" + ...
     "softarm_plant_block=string(bdroot)+""/Plant"";" + ...
     "softarm.applyPlantMask(softarm_plant_block,'" + requirement + "');";
 end
@@ -30,7 +39,11 @@ function prepare(model, initCode, stopTime)
 if bdIsLoaded(model), close_system(model,0); end
 new_system(model);
 set_param(model,"Solver","ode15s","StopTime",stopTime,"InitFcn",initCode);
-set_param(model,"PreLoadFcn","softarm_root=fileparts(get_param(bdroot,'FileName'));addpath(softarm_root);addpath(fullfile(softarm_root,'matlab'));");
+set_param(model,"PreLoadFcn", ...
+    "softarm_model_dir=fileparts(get_param(bdroot,'FileName'));" + ...
+    "softarm_root=fileparts(fileparts(softarm_model_dir));" + ...
+    "addpath(fullfile(softarm_root,'matlab'));" + ...
+    "addpath(fullfile(softarm_root,'matlab','simulink'));");
 end
 
 function addIn(model, name, position, dimension)
@@ -115,6 +128,7 @@ end
 function buildForceDemo(outputPath)
 model = "softarm_tendon_force_demo";
 prepare(model,demoInit("force"),"0.5");
+save_system(model,outputPath);
 set_param(model,"EnablePacing","off","ReturnWorkspaceOutputs","off");
 add_block("simulink/Sources/Constant",model+"/Tension command", ...
     "Position",[30 65 120 95],"Value","softarm_u0");
@@ -124,7 +138,7 @@ add_block("simulink/Sources/Constant",model+"/Tip wrench", ...
     "Position",[360 225 450 255],"Value","zeros(6,1)");
 addReference(model,"Actuator","softarm_actuator_force_block",[190 40 350 120]);
 addReference(model,"Plant","softarm_plant",[510 65 665 210]);
-set_param(model+"/Plant","Bundle","'examples/generated/pcc_three_tendon_extensible_n2'");
+set_param(model+"/Plant","Bundle","'../generated/pcc_three_tendon_extensible_n2'");
 add_block("simulink/Discrete/Memory",model+"/q feedback memory", ...
     "Position",[510 260 545 290],"InitialCondition","softarm_x0(1:softarm_nq)");
 addOut(model,"q",[760 55 790 75]);
@@ -155,6 +169,7 @@ end
 function buildAccelerationDemo(outputPath)
 model = "softarm_tendon_acceleration_demo";
 prepare(model,demoInit("strict"),"0.5");
+save_system(model,outputPath);
 set_param(model,"ReturnWorkspaceOutputs","off");
 add_block("simulink/Sources/Constant",model+"/Tendon acceleration", ...
     "Position",[20 60 135 90],"Value","zeros(softarm_nu,1)");
@@ -166,7 +181,7 @@ add_block("simulink/Sources/Constant",model+"/Tip wrench", ...
     "Position",[20 225 135 255],"Value","zeros(6,1)");
 addReference(model,"Acceleration actuator","softarm_actuator_acceleration_block",[210 35 420 260]);
 addReference(model,"Plant","softarm_plant",[520 55 675 200]);
-set_param(model+"/Plant","Bundle","'examples/generated/pcc_three_tendon_extensible_n2'");
+set_param(model+"/Plant","Bundle","'../generated/pcc_three_tendon_extensible_n2'");
 add_block("simulink/Discrete/Memory",model+"/q feedback memory", ...
     "Position",[520 245 555 275],"InitialCondition","softarm_x0(1:softarm_nq)");
 add_block("simulink/Discrete/Memory",model+"/dq feedback memory", ...

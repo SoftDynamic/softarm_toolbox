@@ -4,9 +4,8 @@ from pathlib import Path
 
 from ..constraints import ConstraintModel
 from ..derive import RuntimeParameter, SymbolicPlant
-from ..backends.session import SymbolicSession
 from .matlab import render_function, symbol_loads
-
+from .optimization import FunctionOptimizer
 
 _OPTIONAL_FILES = (
     "softarm_constraint_value.m",
@@ -28,11 +27,10 @@ def generate_constraint_matlab(
     plant: SymbolicPlant,
     constraint: ConstraintModel,
     output: str | Path,
-    backend: str = "sympy",
-    wolfram_kernel: str | None = None,
     preceding_parameters: tuple[RuntimeParameter, ...] = (),
-    symbolic: SymbolicSession | None = None,
+    optimizer: FunctionOptimizer | None = None,
 ) -> Path:
+    function_optimizer = optimizer or FunctionOptimizer()
     target = Path(output).resolve()
     target.mkdir(parents=True, exist_ok=True)
     q_loads = symbol_loads(plant.q, "q")
@@ -49,7 +47,7 @@ def generate_constraint_matlab(
     ):
         render_function(
             target / filename, function, output_name, matrix, matrix.shape,
-            inputs, loads, backend, wolfram_kernel, symbolic,
+            inputs, loads, function_optimizer,
         )
 
     stabilization = constraint.stabilization_frequency.row_join(
@@ -63,9 +61,7 @@ def generate_constraint_matlab(
         stabilization.shape,
         ["p"],
         p_loads,
-        backend,
-        wolfram_kernel,
-        symbolic,
+        function_optimizer,
     )
 
     unilateral = [

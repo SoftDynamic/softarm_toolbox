@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-from pathlib import Path
 import re
-from typing import Iterable
+from collections.abc import Iterable
+from pathlib import Path
 
 import sympy as sp
 from sympy.printing.latex import LatexPrinter
 
 from ..actuation import ActuationModel
-from ..backends.session import SymbolicSession, create_session
 from ..constraints import ConstraintModel
 from ..derive import RuntimeParameter, SymbolicPlant
 from ..geometry import euler_ritz_transform, pcc_transform, polynomial, transform_rpy
+from .optimization import FunctionOptimizer
 
 
 def _escape_text(value: str) -> str:
@@ -66,9 +66,9 @@ def _symbol_name(name: str) -> str:
             "d_bx": ("d", "b_x"), "d_by": ("d", "b_y"), "d_l": ("d", "L"),
             "EI_x": ("EI", "x"), "EI_y": ("EI", "y"), "d_ax": ("d", "a_x"),
             "d_ay": ("d", "a_y"),
-            "kappa0_x": (r"\kappa_0", "x"), "kappa0_y": (r"\kappa_0", "y"),
-            "kappa0_z": (r"\kappa_0", "z"), "nu0_x": (r"\nu_0", "x"),
-            "nu0_y": (r"\nu_0", "y"), "nu0_z": (r"\nu_0", "z"),
+            "kappa0_x": (r"\kappa", "0,x"), "kappa0_y": (r"\kappa", "0,y"),
+            "kappa0_z": (r"\kappa", "0,z"), "nu0_x": (r"\nu", "0,x"),
+            "nu0_y": (r"\nu", "0,y"), "nu0_z": (r"\nu", "0,z"),
             "GJ": ("GJ", None), "GA_x": ("GA", "x"), "GA_y": ("GA", "y"),
             "EA": ("EA", None), "d_kx": ("d", r"\kappa_x"),
             "d_ky": ("d", r"\kappa_y"), "d_kz": ("d", r"\kappa_z"),
@@ -237,7 +237,7 @@ def _notation(
     lines.append(_equation(r"\boldsymbol q_a=" + _math(plant.arm_q, printer)))
     lines.append(_equation(r"\dot{\boldsymbol q}_a=" + _math(plant.arm_dq, printer)))
     lines.append(_equation(
-        r"\boldsymbol q=\begin{bmatrix}\boldsymbol q_B\\\boldsymbol q_a\end{bmatrix},\qquad"
+        r"\boldsymbol q=\begin{bmatrix}\boldsymbol q_B\\\boldsymbol q_a\end{bmatrix},\qquad "
         r"\dot{\boldsymbol q}=\begin{bmatrix}\dot{\boldsymbol q}_B\\\dot{\boldsymbol q}_a\end{bmatrix}"
     ))
     lines.append(r"The NED world frame is used; gravity acts in the positive world $z$ direction.")
@@ -264,7 +264,7 @@ def _kinematics(plant: SymbolicPlant, printer: SoftArmLatexPrinter) -> str:
         lines.extend([
             r"\subsection{PCC Section}",
             _equation(
-                r"\Sfun(z)=\begin{cases}\dfrac{\sin\sqrt z}{\sqrt z},&z\ne0\\1,&z=0\end{cases},\qquad"
+                r"\Sfun(z)=\begin{cases}\dfrac{\sin\sqrt z}{\sqrt z},&z\ne0\\1,&z=0\end{cases},\qquad "
                 r"\Cfun(z)=\begin{cases}\dfrac{1-\cos\sqrt z}{z},&z\ne0\\\dfrac12,&z=0\end{cases}"
             ),
             r"For one section, $b_x$ and $b_y$ are Cartesian bending-angle components and $L$ is its current length.",
@@ -281,7 +281,7 @@ def _kinematics(plant: SymbolicPlant, printer: SoftArmLatexPrinter) -> str:
                 r"r_i(\xi)=\begin{bmatrix}a_x\psi_x(\xi)&a_y\psi_y(\xi)&L\xi\end{bmatrix}^T"
             ),
             _equation(
-                r"\alpha_x(\xi)=\frac{a_x}{L}\psi_x'(\xi),\qquad"
+                r"\alpha_x(\xi)=\frac{a_x}{L}\psi_x'(\xi),\qquad "
                 r"\alpha_y(\xi)=\frac{a_y}{L}\psi_y'(\xi)"
             ),
             _equation(
@@ -302,15 +302,15 @@ def _kinematics(plant: SymbolicPlant, printer: SoftArmLatexPrinter) -> str:
             ),
             r"The generalized coordinates are increments from the configured stress-free angular and linear strains.",
             _equation(
-                r"\kappa_i=\kappa_{0,i}+\delta\kappa_i,\qquad"
+                r"\kappa_i=\kappa_{0,i}+\delta\kappa_i,\qquad "
                 r"\nu_i=\nu_{0,i}+\delta\nu_i"
             ),
             _equation(
-                r"\Omega_i(\xi)=L_i\xi\widehat{\kappa_i},\qquad"
+                r"\Omega_i(\xi)=L_i\xi\widehat{\kappa_i},\qquad "
                 r"z_i(\xi)=(L_i\xi)^2\kappa_i^T\kappa_i"
             ),
             _equation(
-                r"R_i=I_3+\Sfun(z_i)\Omega_i+\Cfun(z_i)\Omega_i^2,\qquad"
+                r"R_i=I_3+\Sfun(z_i)\Omega_i+\Cfun(z_i)\Omega_i^2,\qquad "
                 r"r_i=\left[I_3+\Cfun(z_i)\Omega_i+\Tfun(z_i)\Omega_i^2\right]L_i\xi\nu_i"
             ),
             _equation(
@@ -323,7 +323,7 @@ def _kinematics(plant: SymbolicPlant, printer: SoftArmLatexPrinter) -> str:
     lines.extend([
         _equation(r"H_{Wi}(\xi)=H_{WB}H_{BA}\left(\prod_{k=1}^{i-1}H_k(1)\right)H_i(\xi)"),
         _equation(
-            r"J_{v,i}=\frac{\partial r_{Wi}}{\partial\boldsymbol q},\qquad"
+            r"J_{v,i}=\frac{\partial r_{Wi}}{\partial\boldsymbol q},\qquad "
             r"J_{\omega,i}^{(:,j)}=\operatorname{vex}\!\left(\operatorname{skew}\!\left("
             r"\frac{\partial R_{Wi}}{\partial q_j}R_{Wi}^{T}\right)\right)"
         ),
@@ -409,12 +409,12 @@ def _energy_and_dynamics(plant: SymbolicPlant, printer: SoftArmLatexPrinter) -> 
         _equation(r"h=c+\nabla_{\boldsymbol q}V+D\dot{\boldsymbol q}"),
         r"The vehicle wrench $w_B$ is expressed in the vehicle body frame, whereas the end wrench $w_e$ is expressed in the NED world frame.",
         _equation(
-            r"Q=S_a\tau_a+B_v(\boldsymbol q)w_B+J_e^Tw_e,\qquad"
+            r"Q=S_a\tau_a+B_v(\boldsymbol q)w_B+J_e^Tw_e,\qquad "
             r"B_v=J_B^T\operatorname{diag}(R_{WB},R_{WB})"
         ),
         _equation(r"M\ddot{\boldsymbol q}+h=Q", "eq:dynamics"),
         _equation(
-            r"\dot x=\begin{bmatrix}\dot{\boldsymbol q}\\M^{-1}(Q-h)\end{bmatrix},\qquad"
+            r"\dot x=\begin{bmatrix}\dot{\boldsymbol q}\\M^{-1}(Q-h)\end{bmatrix},\qquad "
             r"x=\begin{bmatrix}\boldsymbol q\\\dot{\boldsymbol q}\end{bmatrix}"
         ),
     ])
@@ -428,7 +428,7 @@ def _actuation_section(actuation: ActuationModel, printer: SoftArmLatexPrinter) 
         _channel_table(actuation.channel_names, actuation.channel_kinds),
         _equation(r"y(\boldsymbol q_a)=" + _math(actuation.coordinates, printer)),
         _equation(
-            r"J_a=\frac{\partial y}{\partial\boldsymbol q_a},\qquad"
+            r"J_a=\frac{\partial y}{\partial\boldsymbol q_a},\qquad "
             r"\gamma_a=\dot J_a\dot{\boldsymbol q}_a"
         ),
     ]
@@ -455,7 +455,7 @@ def _constraint_section(constraint: ConstraintModel, printer: SoftArmLatexPrinte
         rf"The configured constraint family is \texttt{{{_escape_text(constraint.family)}}} with {constraint.count} channels.",
         _channel_table(constraint.channel_names, constraint.channel_kinds),
         _equation(
-            r"A=\frac{\partial\phi}{\partial\boldsymbol q},\qquad"
+            r"A=\frac{\partial\phi}{\partial\boldsymbol q},\qquad "
             r"\gamma=\dot A\dot{\boldsymbol q},\qquad Q_c=G(\boldsymbol q,\dot{\boldsymbol q})\lambda"
         ),
         _equation(
@@ -469,7 +469,7 @@ def _constraint_section(constraint: ConstraintModel, printer: SoftArmLatexPrinte
             r"For the plane-point implementation, $n$ is the unit normal directed into the free half-space.",
             _equation(r"\phi=n^T(r_c-r_0)\ge0,\qquad A=n^TJ_c"),
             _equation(
-                r"v_t=(I-nn^T)J_c\dot{\boldsymbol q},\qquad"
+                r"v_t=(I-nn^T)J_c\dot{\boldsymbol q},\qquad "
                 r"f_t=-\mu\lambda\frac{v_t}{\sqrt{v_t^Tv_t+v_s^2}}"
             ),
             _equation(
@@ -484,20 +484,11 @@ def _constraint_section(constraint: ConstraintModel, printer: SoftArmLatexPrinte
 
 def _cse_data(
     expressions: list[sp.Expr],
-    slug: str,
-    backend: str,
-    wolfram_kernel: str | None,
-    symbolic: SymbolicSession | None = None,
+    shape: tuple[int, ...],
+    optimizer: FunctionOptimizer,
 ) -> tuple[list[tuple[sp.Symbol, sp.Expr]], list[sp.Expr]]:
-    owned = symbolic is None
-    executor = symbolic or create_session(backend, wolfram_kernel)
-    optimized = executor.optimize(expressions)
-    replacements, reduced = executor.cse(
-        optimized, prefix=f"cse_{slug}_", order="canonical"
-    )
-    if owned:
-        executor.close()
-    return replacements, reduced
+    optimized = optimizer.optimize(expressions, shape)
+    return list(optimized.replacements), list(optimized.expressions)
 
 
 def _reconstruct_cse(
@@ -525,19 +516,18 @@ def _appendix_block(
     matrix: sp.Matrix,
     symbol: str,
     printer: SoftArmLatexPrinter,
-    backend: str,
-    wolfram_kernel: str | None,
+    optimizer: FunctionOptimizer,
     upper: bool = False,
-    symbolic: SymbolicSession | None = None,
 ) -> str:
     indexed: list[tuple[int, int, sp.Expr]] = []
-    for row in range(matrix.rows):
-        for column in range(matrix.cols):
+    for column in range(matrix.cols):
+        for row in range(matrix.rows):
             if upper and column < row:
                 continue
             indexed.append((row, column, matrix[row, column]))
+    shape = (len(indexed),) if upper else matrix.shape
     replacements, reduced = _cse_data(
-        [item[2] for item in indexed], slug, backend, wolfram_kernel, symbolic
+        [item[2] for item in indexed], shape, optimizer
     )
     definitions = [
         rf"{_math(temp, printer)}&={_math(expression, printer)}"
@@ -560,35 +550,33 @@ def _appendix(
     actuation: ActuationModel | None,
     constraint: ConstraintModel | None,
     printer: SoftArmLatexPrinter,
-    backend: str,
-    wolfram_kernel: str | None,
-    symbolic: SymbolicSession | None = None,
+    optimizer: FunctionOptimizer,
 ) -> str:
     blocks = [
         r"\appendix",
         r"\section{Exact Symbolic Appendix}",
         r"This appendix is generated from the exact symbolic outputs. Indices are one-based; the lower mass-matrix triangle follows by symmetry.",
         _equation(r"M_{ji}=M_{ij}\qquad(j>i)"),
-        _appendix_block("Potential energy", "v", sp.Matrix([plant.potential]), "V", printer, backend, wolfram_kernel, symbolic=symbolic),
-        _appendix_block("Damping matrix", "d", plant.damping, "D", printer, backend, wolfram_kernel, symbolic=symbolic),
-        _appendix_block("Mass matrix", "m", plant.mass, "M", printer, backend, wolfram_kernel, upper=True, symbolic=symbolic),
-        _appendix_block("Bias vector", "h", plant.bias, "h", printer, backend, wolfram_kernel, symbolic=symbolic),
-        _appendix_block("End transform", "he", plant.end_transform, "H^e", printer, backend, wolfram_kernel, symbolic=symbolic),
-        _appendix_block("End Jacobian", "je", plant.end_jacobian, "J^e", printer, backend, wolfram_kernel, symbolic=symbolic),
-        _appendix_block("Vehicle wrench map", "bv", plant.vehicle_wrench_map, "B^v", printer, backend, wolfram_kernel, symbolic=symbolic),
+        _appendix_block("Potential energy", "v", sp.Matrix([plant.potential]), "V", printer, optimizer),
+        _appendix_block("Damping matrix", "d", plant.damping, "D", printer, optimizer),
+        _appendix_block("Mass matrix", "m", plant.mass, "M", printer, optimizer, upper=True),
+        _appendix_block("Bias vector", "h", plant.bias, "h", printer, optimizer),
+        _appendix_block("End transform", "he", plant.end_transform, "H^e", printer, optimizer),
+        _appendix_block("End Jacobian", "je", plant.end_jacobian, "J^e", printer, optimizer),
+        _appendix_block("Vehicle wrench map", "bv", plant.vehicle_wrench_map, "B^v", printer, optimizer),
     ]
     if actuation is not None:
         blocks.extend([
-            _appendix_block("Actuator coordinates", "ay", actuation.coordinates, "y", printer, backend, wolfram_kernel, symbolic=symbolic),
-            _appendix_block("Actuator Jacobian", "aja", actuation.jacobian, "J^a", printer, backend, wolfram_kernel, symbolic=symbolic),
-            _appendix_block("Actuator velocity bias", "ag", actuation.velocity_bias, r"\gamma^a", printer, backend, wolfram_kernel, symbolic=symbolic),
+            _appendix_block("Actuator coordinates", "ay", actuation.coordinates, "y", printer, optimizer),
+            _appendix_block("Actuator Jacobian", "aja", actuation.jacobian, "J^a", printer, optimizer),
+            _appendix_block("Actuator velocity bias", "ag", actuation.velocity_bias, r"\gamma^a", printer, optimizer),
         ])
     if constraint is not None:
         blocks.extend([
-            _appendix_block("Constraint coordinates", "cp", constraint.coordinates, r"\phi", printer, backend, wolfram_kernel, symbolic=symbolic),
-            _appendix_block("Constraint Jacobian", "ca", constraint.jacobian, "A", printer, backend, wolfram_kernel, symbolic=symbolic),
-            _appendix_block("Constraint velocity bias", "cg", constraint.velocity_bias, r"\gamma", printer, backend, wolfram_kernel, symbolic=symbolic),
-            _appendix_block("Constraint reaction map", "cr", constraint.reaction_map, "G", printer, backend, wolfram_kernel, symbolic=symbolic),
+            _appendix_block("Constraint coordinates", "cp", constraint.coordinates, r"\phi", printer, optimizer),
+            _appendix_block("Constraint Jacobian", "ca", constraint.jacobian, "A", printer, optimizer),
+            _appendix_block("Constraint velocity bias", "cg", constraint.velocity_bias, r"\gamma", printer, optimizer),
+            _appendix_block("Constraint reaction map", "cr", constraint.reaction_map, "G", printer, optimizer),
         ])
     return "\n".join(blocks)
 
@@ -599,9 +587,7 @@ def generate_latex_document(
     actuation: ActuationModel | None = None,
     constraint: ConstraintModel | None = None,
     include_appendix: bool = False,
-    backend: str = "sympy",
-    wolfram_kernel: str | None = None,
-    symbolic: SymbolicSession | None = None,
+    optimizer: FunctionOptimizer | None = None,
 ) -> Path:
     """Generate a deterministic, standalone mathematical description of a model."""
     target = Path(output).resolve()
@@ -634,9 +620,9 @@ def generate_latex_document(
     if constraint is not None:
         sections.append(_constraint_section(constraint, printer))
     if include_appendix:
+        function_optimizer = optimizer or FunctionOptimizer()
         sections.append(_appendix(
-            plant, actuation, constraint, printer, backend, wolfram_kernel
-            , symbolic
+            plant, actuation, constraint, printer, function_optimizer
         ))
     sections.append(r"\end{document}")
     path = target / "softarm_model.tex"

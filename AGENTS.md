@@ -5,11 +5,13 @@
 
 ## 1. 架构边界
 
-- SymPy 表达式和通用符号任务图是运动学、能量、动力学、执行器和约束公式的
-  规范表示；所有模型公式只在 Python/SymPy builder 中定义。
-- SymPy 后端直接执行通用符号任务。Wolfram 后端可执行矩阵运算、求导、
-  材料坐标积分、表达式优化与 CSE，但 WLS bridge 中不得包含模型专用公式。
-  后端结果必须转换回 SymPy 公共表达式；MATLAB 和 Simulink 消费生成的数值函数。
+- SymPy 表达式是运动学、能量、动力学、执行器和约束公式的规范表示；模型公式、
+  几何装配和材料坐标积分只在 Python/SymPy 模型域中定义和执行。
+- 构建编排层可将统一 bias 公式所需的批量求导交给 Wolfram。`FactorTerms` 和
+  实验性 Wolfram CSE 只有在用户显式选择对应构建选项时执行；失败必须报错，
+  禁止自动回退、静默跳过、复杂度阈值或模型/配置专用路由。
+- WLS bridge 只实现通用算子，不得包含模型专用公式。后端结果必须转换回 SymPy
+  表达式；MATLAB 和 Simulink 消费生成的数值函数。
 - 同一公式不得在 Python、Wolfram 和 MATLAB 层分别维护。
 - `SymbolicPlant` 的公共结果保持为 `mass`、`potential`、`damping`、
   `kinematics` 和 `end_jacobian`；`bias` 由统一能量公式构造。
@@ -47,18 +49,17 @@
 - MATLAB 数值函数在 $|\rho^2|<10^{-8}$ 区间使用 Taylor 多项式。
 - 新增特殊函数时，在 `src/softarm/special.py` 中定义 SymPy 函数、解析导数和
   独立数值实现。
-- 同一 AST 节点的往返和输出规则应同步加入 `src/softarm/ast.py`、
+- 同一 AST 节点的往返和输出规则应同步加入 `src/softarm/backends/protocol.py`、
   `src/softarm/backends/wolfram_bridge.wls` 和 MATLAB printer。
 - 奇点处理应保持状态变量和动力学矩阵的原始定义，禁止通过修改状态的 epsilon
   或人为质量正则项替代解析延拓。
 
 ## 3. 积分与后端
 
-- `integration.method = "analytic"` 表示由所选符号后端执行材料坐标解析积分，
-  输入公式、积分变量、精确边界和符号假设均来自 SymPy 任务图。
+- `integration.method = "analytic"` 表示由 SymPy 执行材料坐标解析积分。
 - `integration.method = "gauss"` 表示显式生成指定阶数的 Gauss–Legendre 求和。
 - 积分方法由配置确定；解析积分错误应作为构建错误报告。
-- SymPy 和 Wolfram 后端必须对同一任务图保持数值一致。
+- SymPy 和 Wolfram 批量求导结果必须保持数值一致。
 
 ## 4. 执行器与约束
 
@@ -92,10 +93,14 @@
   `ActuationModel` 和 `ConstraintModel`。
 - 数学手册正文使用命名装配公式。`--tex-appendix` 用于输出优化和 CSE 后的
   精确表达式；大型浮动基座模型的附录体量应在提交前评估。
+- MATLAB 与 TeX appendix 共享同一函数级优化缓存。默认使用 `sympy.cse`；
+  `FactorTerms` 和实验性 Wolfram CSE 不得由代码自行启用。
 
 ## 6. MATLAB 与 Simulink 维护
 
 - SLX 文件由 MATLAB 构建脚本生成，禁止将手工编辑作为模型维护路径。
+- 可复用 Plant、约束和执行器 Model Reference 维护在 `matlab/simulink/`；可直接
+  运行的顶层 Demo 维护在 `examples/simulink/`。仓库根目录不存放 SLX 源文件。
 - 重建顺序为：
 
   ```matlab
@@ -118,6 +123,7 @@
 Python 测试：
 
 ```shell
+python -m ruff check .
 python -m pytest
 ```
 

@@ -7,7 +7,6 @@ from softarm.config import BaseConfig, IntegrationConfig, ModelConfig, load_conf
 from softarm.derive import derive
 from softarm.special import LAMBDA_MODULES
 
-
 ROOT = Path(__file__).parents[1]
 
 
@@ -51,7 +50,8 @@ def test_floating_base_has_coupled_coordinates_and_wrench_map():
     assert floating.mass.shape == (9, 9)
     assert floating.end_jacobian.shape == (6, 9)
     assert floating.vehicle_wrench_map.shape == (9, 6)
-    q = np.zeros(len(floating.q)); q[8] = 0.5
+    q = np.zeros(len(floating.q))
+    q[8] = 0.5
     p = np.array([item.default for item in floating.parameters])
     evaluate = sp.lambdify(
         (floating.q, floating.p), floating.mass, [LAMBDA_MODULES, "numpy"]

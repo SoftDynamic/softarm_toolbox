@@ -63,7 +63,8 @@ def test_distributed_mass_matches_independent_numerical_quadrature():
     for node, weight in zip((nodes+1)/2, weights/2, strict=True):
         jacobian = np.zeros((3, 3))
         for column in range(3):
-            delta = np.zeros(3); delta[column] = step
+            delta = np.zeros(3)
+            delta[column] = step
             jacobian[:, column] = (_pcc_position(q+delta, node)-_pcc_position(q-delta, node))/(2*step)
         independent += weight * jacobian.T @ jacobian
     np.testing.assert_allclose(symbolic, independent, rtol=2e-5, atol=2e-7)

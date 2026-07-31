@@ -35,7 +35,8 @@ def test_plane_contact_shapes_and_constraint_bias():
     assert constraint.reaction_map.shape == (len(plant.q), 1)
     parameters = plant.parameters + constraint.parameters
     p = np.array([item.default for item in parameters])
-    q = np.zeros(len(plant.q)); q[8] = 0.5
+    q = np.zeros(len(plant.q))
+    q[8] = 0.5
     dq = np.zeros(len(plant.q))
     value = sp.lambdify(
         (plant.q, sp.Matrix([item.symbol for item in parameters])),
@@ -48,8 +49,10 @@ def test_plane_contact_shapes_and_constraint_bias():
     assert abs(float(np.asarray(value(q, p)).item())) < 1e-12
     assert abs(float(np.asarray(bias(q, dq, p)).item())) < 1e-12
     step = 1e-7
-    q_plus = q.copy(); q_plus[2] += step
-    q_minus = q.copy(); q_minus[2] -= step
+    q_plus = q.copy()
+    q_plus[2] += step
+    q_minus = q.copy()
+    q_minus[2] -= step
     numerical = (np.asarray(value(q_plus, p))-np.asarray(value(q_minus, p)))/(2*step)
     jacobian = sp.lambdify(
         (plant.q, sp.Matrix([item.symbol for item in parameters])),
@@ -66,8 +69,10 @@ def test_plane_contact_friction_is_dissipative_and_mu_zero_is_normal():
         parameters = plant.parameters + constraint.parameters
         parameter_symbols = sp.Matrix([item.symbol for item in parameters])
         p = np.array([item.default for item in parameters])
-        q = np.zeros(len(plant.q)); q[8] = 0.5
-        dq = np.zeros(len(plant.q)); dq[0] = 0.2
+        q = np.zeros(len(plant.q))
+        q[8] = 0.5
+        dq = np.zeros(len(plant.q))
+        dq[0] = 0.2
         power = sp.lambdify(
             (plant.q, plant.dq, parameter_symbols),
             (plant.dq.T * constraint.reaction_map)[0],

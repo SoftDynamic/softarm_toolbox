@@ -1,17 +1,22 @@
-function build_softarm_plant(outputPath)
+function build_softarm_plant
 %BUILD_SOFTARM_PLANT Rebuild the repository's generic Simulink plant.
-arguments
-    outputPath (1,1) string = fullfile(fileparts(fileparts(mfilename("fullpath"))), "softarm_plant.slx")
-end
+repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
+outputDirectory = fullfile(repositoryRoot,"matlab","simulink");
+if ~isfolder(outputDirectory), mkdir(outputDirectory); end
+outputPath = fullfile(outputDirectory,"softarm_plant.slx");
 model = "softarm_plant";
 if bdIsLoaded(model), close_system(model, 0); end
 new_system(model);
-defaultBundle = "examples/generated/pcc_lumped_n2";
+defaultBundle = fullfile("..","..","examples","generated","pcc_lumped_n2");
 modelWorkspace = get_param(model,"ModelWorkspace");
 assignin(modelWorkspace,"Bundle",char(defaultBundle));
 set_param(model,"ParameterArgumentNames","Bundle");
 set_param(model, "Solver", "ode15s", "StopTime", "5");
-set_param(model,"PreLoadFcn","softarm_root=fileparts(get_param(bdroot,'FileName'));addpath(softarm_root);addpath(fullfile(softarm_root,'matlab'));");
+set_param(model,"PreLoadFcn", ...
+    "softarm_model_dir=fileparts(get_param(bdroot,'FileName'));" + ...
+    "softarm_root=fileparts(fileparts(softarm_model_dir));" + ...
+    "addpath(fullfile(softarm_root,'matlab'));" + ...
+    "addpath(fullfile(softarm_root,'matlab','simulink'));");
 mask = Simulink.Mask.create(model);
 mask.Description = "Select a generated SoftArm bundle. Changing the bundle recompiles dimensions and parameters.";
 bundleParameter = mask.getParameter("Bundle");
