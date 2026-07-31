@@ -85,6 +85,28 @@ def _tendon_builder(plant: SymbolicPlant, config: ActuationConfig) -> ActuationM
                 if channel.kind == "unilateral":
                     coordinate += length
                 coordinate -= radius * bending
+            elif plant.config.family == "cosserat_pcs":
+                offset = 6 * section
+                length = plant_parameters[f"s{span.section}_length"]
+                kappa = sp.Matrix([
+                    plant_parameters[f"s{span.section}_kappa0_x"] + plant.arm_q[offset],
+                    plant_parameters[f"s{span.section}_kappa0_y"] + plant.arm_q[offset + 1],
+                    plant_parameters[f"s{span.section}_kappa0_z"] + plant.arm_q[offset + 2],
+                ])
+                nu = sp.Matrix([
+                    plant_parameters[f"s{span.section}_nu0_x"] + plant.arm_q[offset + 3],
+                    plant_parameters[f"s{span.section}_nu0_y"] + plant.arm_q[offset + 4],
+                    plant_parameters[f"s{span.section}_nu0_z"] + plant.arm_q[offset + 5],
+                ])
+                routing_offset = sp.Matrix([radius * cosine, radius * sine, 0])
+                plus_tangent = nu + kappa.cross(routing_offset)
+                plus_length = length * sp.sqrt(plus_tangent.dot(plus_tangent))
+                if channel.kind == "unilateral":
+                    coordinate += plus_length
+                else:
+                    minus_tangent = nu - kappa.cross(routing_offset)
+                    minus_length = length * sp.sqrt(minus_tangent.dot(minus_tangent))
+                    coordinate += (plus_length - minus_length) / 2
             else:
                 raise ValueError(
                     f"built-in tendon routing does not support model family {plant.config.family!r}"

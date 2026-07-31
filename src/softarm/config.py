@@ -207,6 +207,10 @@ def load_config(path: str | Path) -> ModelConfig:
     inertia = str(model.get("inertia", "distributed")).lower()
     if family == "pcc" and inertia not in {"distributed", "lumped"}:
         raise ConfigError("PCC inertia must be 'distributed' or 'lumped'")
+    if family == "cosserat_pcs" and inertia not in {"distributed", "lumped"}:
+        raise ConfigError("Cosserat-PCS inertia must be 'distributed' or 'lumped'")
+    if family == "cosserat_pcs" and inertia == "lumped" and "integration" in raw:
+        raise ConfigError("integration is not applicable to lumped Cosserat-PCS inertia")
     if family == "euler":
         inertia = "distributed"
 
@@ -221,6 +225,15 @@ def load_config(path: str | Path) -> ModelConfig:
         order = int(order)
     else:
         order = None
+    if family == "cosserat_pcs" and inertia == "distributed":
+        if method != "gauss":
+            raise ConfigError(
+                "distributed Cosserat-PCS inertia requires integration.method='gauss'"
+            )
+        if order is None or order < 2:
+            raise ConfigError(
+                "distributed Cosserat-PCS inertia requires Gauss order at least 2"
+            )
 
     ritz_x = ritz_y = None
     if family == "euler":

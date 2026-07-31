@@ -1,0 +1,134 @@
+{
+  "model": {
+    "family": "cosserat_pcs",
+    "segments": 1,
+    "base_mode": "fixed"
+  },
+  "coordinates": {
+    "base": [],
+    "arm": [
+      "kx1",
+      "ky1",
+      "kz1",
+      "vx1",
+      "vy1",
+      "vz1"
+    ]
+  },
+  "parameters": [
+    {
+      "name": "s1_length",
+      "default": 0.45
+    },
+    {
+      "name": "s1_mass",
+      "default": 0.18
+    },
+    {
+      "name": "s1_Ixx",
+      "default": 0.0018
+    },
+    {
+      "name": "s1_Iyy",
+      "default": 0.0018
+    },
+    {
+      "name": "s1_Izz",
+      "default": 0.0001
+    },
+    {
+      "name": "s1_kappa0_x",
+      "default": 0.0
+    },
+    {
+      "name": "s1_kappa0_y",
+      "default": 0.0
+    },
+    {
+      "name": "s1_kappa0_z",
+      "default": 0.0
+    },
+    {
+      "name": "s1_nu0_x",
+      "default": 0.0
+    },
+    {
+      "name": "s1_nu0_y",
+      "default": 0.0
+    },
+    {
+      "name": "s1_nu0_z",
+      "default": 1.0
+    },
+    {
+      "name": "s1_EI_x",
+      "default": 1.1
+    },
+    {
+      "name": "s1_EI_y",
+      "default": 1.1
+    },
+    {
+      "name": "s1_GJ",
+      "default": 0.2
+    },
+    {
+      "name": "s1_GA_x",
+      "default": 20.0
+    },
+    {
+      "name": "s1_GA_y",
+      "default": 20.0
+    },
+    {
+      "name": "s1_EA",
+      "default": 50.0
+    },
+    {
+      "name": "s1_d_kx",
+      "default": 0.05
+    },
+    {
+      "name": "s1_d_ky",
+      "default": 0.05
+    },
+    {
+      "name": "s1_d_kz",
+      "default": 0.02
+    },
+    {
+      "name": "s1_d_vx",
+      "default": 0.1
+    },
+    {
+      "name": "s1_d_vy",
+      "default": 0.1
+    },
+    {
+      "name": "s1_d_vz",
+      "default": 0.1
+    },
+    {
+      "name": "gravity",
+      "default": 9.81
+    },
+    {
+      "name": "tip_mass",
+      "default": 0.1
+    },
+    {
+      "name": "tip_Ixx",
+      "default": 0.01
+    },
+    {
+      "name": "tip_Iyy",
+      "default": 0.01
+    },
+    {
+      "name": "tip_Izz",
+      "default": 0.01
+    }
+  ],
+  "actuation": null,
+  "constraint": null
+}

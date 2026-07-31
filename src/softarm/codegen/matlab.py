@@ -32,6 +32,15 @@ class _MatlabPrinter(OctaveCodePrinter):
     def _print_CoscSqrtDD(self, expr):
         return f"softarm_cosc_sqrt_dd({self._print(expr.args[0])})"
 
+    def _print_Sinc3Sqrt(self, expr):
+        return f"softarm_sinc3_sqrt({self._print(expr.args[0])})"
+
+    def _print_Sinc3SqrtD(self, expr):
+        return f"softarm_sinc3_sqrt_d({self._print(expr.args[0])})"
+
+    def _print_Sinc3SqrtDD(self, expr):
+        return f"softarm_sinc3_sqrt_dd({self._print(expr.args[0])})"
+
 
 def _flatten(matrix: sp.Matrix) -> list[sp.Expr]:
     return [matrix[row, column] for column in range(matrix.cols) for row in range(matrix.rows)]
@@ -72,6 +81,9 @@ _HELPERS = {
     "softarm_cosc_sqrt.m": """function y = softarm_cosc_sqrt(z)\n%#codegen\nif abs(z)<1e-8, y=1/2-z/24+z^2/720-z^3/40320+z^4/3628800; else, s=sqrt(z); y=(1-cos(s))/z; end\nend\n""",
     "softarm_cosc_sqrt_d.m": """function y = softarm_cosc_sqrt_d(z)\n%#codegen\nif abs(z)<1e-8, y=-1/24+z/360-z^2/13440+z^3/907200; else, s=sqrt(z); y=(s*sin(s)-2*(1-cos(s)))/(2*z^2); end\nend\n""",
     "softarm_cosc_sqrt_dd.m": """function y = softarm_cosc_sqrt_dd(z)\n%#codegen\nif abs(z)<1e-8, y=1/360-z/6720+z^2/302400; else, s=sqrt(z); y=(z*cos(s)-5*s*sin(s)+8-8*cos(s))/(4*z^3); end\nend\n""",
+    "softarm_sinc3_sqrt.m": """function y = softarm_sinc3_sqrt(z)\n%#codegen\nif abs(z)<1e-8, y=1/6-z/120+z^2/5040-z^3/362880+z^4/39916800; else, y=(1-softarm_sinc_sqrt(z))/z; end\nend\n""",
+    "softarm_sinc3_sqrt_d.m": """function y = softarm_sinc3_sqrt_d(z)\n%#codegen\nif abs(z)<1e-8, y=-1/120+z/2520-z^2/120960+z^3/9979200; else, a=softarm_sinc_sqrt(z); y=(a-1-z*softarm_sinc_sqrt_d(z))/z^2; end\nend\n""",
+    "softarm_sinc3_sqrt_dd.m": """function y = softarm_sinc3_sqrt_dd(z)\n%#codegen\nif abs(z)<1e-8, y=1/2520-z/60480+z^2/3326400; else, a=softarm_sinc_sqrt(z); y=(2-2*a+2*z*softarm_sinc_sqrt_d(z)-z^2*softarm_sinc_sqrt_dd(z))/z^3; end\nend\n""",
 }
 
 

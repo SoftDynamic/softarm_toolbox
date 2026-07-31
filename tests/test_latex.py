@@ -157,3 +157,16 @@ def test_generated_document_compiles_with_pdflatex(tmp_path):
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_cosserat_document_describes_pcs_and_lumped_inertia(tmp_path):
+    plant = derive(ModelConfig(
+        family="cosserat_pcs", segments=1, inertia="lumped",
+        integration=IntegrationConfig(),
+    ))
+    generate_latex_document(plant, tmp_path)
+    text = (tmp_path / "softarm_model.tex").read_text(encoding="utf-8")
+    assert "Cosserat Piecewise-Constant-Strain Section" in text
+    assert r"\Tfun" in text
+    assert "lumped inertia option" in text
+    assert r"GA_{x,i}" in text and r"GJ_i" in text

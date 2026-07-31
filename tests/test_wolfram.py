@@ -38,3 +38,21 @@ def test_wolfram_n3_full_euler_generation(tmp_path):
     assert (tmp_path / "softarm_mass.m").is_file()
     assert (tmp_path / "softarm_bias.m").is_file()
     assert (tmp_path / "softarm_forward_dynamics.m").is_file()
+
+
+def test_wolfram_cosserat_kinematics_round_trip():
+    local = Path(__file__).parents[1] / ".softarm.local.toml"
+    if not local.is_file():
+        pytest.skip("no local Wolfram tool configuration")
+    plant = derive(ModelConfig(
+        family="cosserat_pcs", segments=1, inertia="lumped",
+        integration=IntegrationConfig(),
+    ))
+    original = list(plant.kinematics)
+    transformed = optimize(original)
+    symbols = list(plant.q) + [item.symbol for item in plant.parameters]
+    before = sp.lambdify(symbols, original, [LAMBDA_MODULES, "numpy"])
+    after = sp.lambdify(symbols, transformed, [LAMBDA_MODULES, "numpy"])
+    values = [0.1, -0.2, 0.05, 0.02, -0.01, 0.03]
+    values += [item.default for item in plant.parameters]
+    np.testing.assert_allclose(before(*values), after(*values), rtol=1e-10, atol=1e-12)

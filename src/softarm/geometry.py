@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sympy as sp
 
-from .special import CoscSqrt, SincSqrt
+from .special import CoscSqrt, Sinc3Sqrt, SincSqrt
 
 
 def homogeneous(rotation: sp.Matrix, position: sp.Matrix) -> sp.Matrix:
@@ -28,6 +28,11 @@ def transform_rpy(
     return homogeneous(rotation_rpy(*rpy), sp.Matrix(position))
 
 
+def skew(vector: tuple[sp.Expr, sp.Expr, sp.Expr] | sp.Matrix) -> sp.Matrix:
+    x, y, z = sp.Matrix(vector)
+    return sp.Matrix([[0, -z, y], [z, 0, -x], [-y, x, 0]])
+
+
 def pcc_transform(bx: sp.Expr, by: sp.Expr, length: sp.Expr, xi: sp.Expr = sp.S.One) -> sp.Matrix:
     x = xi * bx
     y = xi * by
@@ -40,6 +45,27 @@ def pcc_transform(bx: sp.Expr, by: sp.Expr, length: sp.Expr, xi: sp.Expr = sp.S.
         [-x * a, -y * a, 1 - z * b],
     ])
     position = sp.Matrix([length * xi * x * b, length * xi * y * b, length * xi * a])
+    return homogeneous(rotation, position)
+
+
+def cosserat_pcs_transform(
+    kappa: tuple[sp.Expr, sp.Expr, sp.Expr] | sp.Matrix,
+    nu: tuple[sp.Expr, sp.Expr, sp.Expr] | sp.Matrix,
+    length: sp.Expr,
+    xi: sp.Expr = sp.S.One,
+) -> sp.Matrix:
+    """Exact constant-strain Cosserat transform on SE(3)."""
+    kappa_vector = sp.Matrix(kappa)
+    nu_vector = sp.Matrix(nu)
+    distance = length * xi
+    omega = distance * skew(kappa_vector)
+    z = distance**2 * kappa_vector.dot(kappa_vector)
+    omega_squared = omega * omega
+    rotation = sp.eye(3) + SincSqrt(z) * omega + CoscSqrt(z) * omega_squared
+    left_jacobian = (
+        sp.eye(3) + CoscSqrt(z) * omega + Sinc3Sqrt(z) * omega_squared
+    )
+    position = left_jacobian * (distance * nu_vector)
     return homogeneous(rotation, position)
 
 

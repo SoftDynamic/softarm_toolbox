@@ -23,6 +23,27 @@ def _pcc_position(q, xi):
     return np.array([length*xi*x*b, length*xi*y*b, length*xi*a])
 
 
+def _cosserat_position(q, xi, length=0.5):
+    kappa = np.asarray(q[:3], dtype=float)
+    nu = np.asarray([q[3], q[4], 1.0 + q[5]], dtype=float)
+    omega_vector = length * xi * kappa
+    omega = np.array([
+        [0.0, -omega_vector[2], omega_vector[1]],
+        [omega_vector[2], 0.0, -omega_vector[0]],
+        [-omega_vector[1], omega_vector[0], 0.0],
+    ])
+    z = float(omega_vector @ omega_vector)
+    if abs(z) < 1e-12:
+        b = 0.5 - z / 24 + z * z / 720
+        c = 1 / 6 - z / 120 + z * z / 5040
+    else:
+        root = math.sqrt(z)
+        b = (1 - math.cos(root)) / z
+        c = (1 - math.sin(root) / root) / z
+    left_jacobian = np.eye(3) + b * omega + c * omega @ omega
+    return left_jacobian @ (length * xi * nu)
+
+
 def test_distributed_mass_matches_independent_numerical_quadrature():
     config = ModelConfig(
         family="pcc", segments=1, inertia="distributed", integration=IntegrationConfig("gauss", 4),
@@ -62,3 +83,38 @@ def test_coriolis_term_satisfies_energy_identity():
     residual = (plant.dq.T * (coriolis-sp.Rational(1,2)*mdot*plant.dq))[0]
     evaluate = sp.lambdify((plant.q, plant.dq, plant.p), residual, [LAMBDA_MODULES, "numpy"])
     assert abs(float(evaluate(q, dq, p))) < 1e-10
+
+
+def test_cosserat_distributed_mass_matches_independent_quadrature():
+    config = ModelConfig(
+        family="cosserat_pcs", segments=1, inertia="distributed",
+        integration=IntegrationConfig("gauss", 4),
+        parameters={
+            "length": 0.5, "mass": 1.0,
+            "Ixx": 0.0, "Iyy": 0.0, "Izz": 0.0,
+            "tip_mass": 0.0, "tip_Ixx": 0.0, "tip_Iyy": 0.0, "tip_Izz": 0.0,
+        },
+    )
+    plant = derive(config)
+    q = np.array([0.11, -0.08, 0.04, 0.02, -0.01, 0.03])
+    p = np.array([item.default for item in plant.parameters])
+    symbolic = np.asarray(
+        sp.lambdify(
+            (plant.q, plant.p), plant.mass, [LAMBDA_MODULES, "numpy"]
+        )(q, p),
+        dtype=float,
+    )
+    nodes, weights = np.polynomial.legendre.leggauss(30)
+    independent = np.zeros((6, 6))
+    step = 2e-6
+    for node, weight in zip((nodes + 1) / 2, weights / 2, strict=True):
+        jacobian = np.zeros((3, 6))
+        for column in range(6):
+            delta = np.zeros(6)
+            delta[column] = step
+            jacobian[:, column] = (
+                _cosserat_position(q + delta, node)
+                - _cosserat_position(q - delta, node)
+            ) / (2 * step)
+        independent += weight * jacobian.T @ jacobian
+    np.testing.assert_allclose(symbolic, independent, rtol=3e-6, atol=3e-8)

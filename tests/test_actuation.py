@@ -129,3 +129,39 @@ def test_custom_actuator_builder_registration():
     result = derive_actuation(plant, ActuationConfig("test_custom_actuator", "none"))
     assert result is not None
     assert result.channel_names == ("custom",)
+
+
+def test_cosserat_tendon_lengths_virtual_work_and_strict_rank():
+    plant = derive(load_config(
+        ROOT / "examples/config/cosserat_pcs_distributed_tendon_n1.toml"
+    ))
+    actuation = derive_actuation(plant)
+    assert actuation is not None
+    defaults = {
+        item.symbol: item.default for item in plant.parameters + actuation.parameters
+    }
+    reference = {coordinate: 0.0 for coordinate in plant.arm_q}
+    coordinates = np.asarray(
+        actuation.coordinates.subs(defaults).subs(reference), dtype=float
+    ).reshape(3)
+    np.testing.assert_allclose(coordinates, 0.45, atol=1e-14)
+    jacobian = np.asarray(
+        actuation.jacobian.subs(defaults).subs(reference), dtype=float
+    )
+    assert np.linalg.matrix_rank(jacobian) == 3
+
+    routing = ActuationConfig("tendon", "none", (
+        TendonChannelConfig(
+            "signed_x", "signed", (TendonSpanConfig(1, 0.02, 0.0),)
+        ),
+    ))
+    signed = derive_actuation(plant, routing)
+    assert signed is not None
+    signed_defaults = {
+        item.symbol: item.default for item in plant.parameters + signed.parameters
+    }
+    signed_jacobian = np.asarray(
+        signed.jacobian.subs(signed_defaults).subs(reference), dtype=float
+    )
+    np.testing.assert_allclose(signed_jacobian[0, 1], -0.45 * 0.02, atol=1e-14)
+    np.testing.assert_allclose(signed_jacobian[0, [0, 2, 3, 4, 5]], 0.0, atol=1e-14)

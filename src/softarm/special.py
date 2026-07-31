@@ -48,6 +48,30 @@ class CoscSqrtDD(sp.Function):
     nargs = 1
 
 
+class Sinc3Sqrt(sp.Function):
+    """Analytic continuation of (1 - sinc(sqrt(z))) / z."""
+
+    nargs = 1
+
+    def fdiff(self, argindex=1):
+        if argindex != 1:
+            raise sp.ArgumentIndexError(self, argindex)
+        return Sinc3SqrtD(self.args[0])
+
+
+class Sinc3SqrtD(sp.Function):
+    nargs = 1
+
+    def fdiff(self, argindex=1):
+        if argindex != 1:
+            raise sp.ArgumentIndexError(self, argindex)
+        return Sinc3SqrtDD(self.args[0])
+
+
+class Sinc3SqrtDD(sp.Function):
+    nargs = 1
+
+
 def _series_sinc(z: float) -> float:
     return 1.0 - z / 6.0 + z * z / 120.0 - z**3 / 5040.0 + z**4 / 362880.0
 
@@ -70,6 +94,18 @@ def _series_cosc_d(z: float) -> float:
 
 def _series_cosc_dd(z: float) -> float:
     return 1.0 / 360.0 - z / 6720.0 + z * z / 302400.0
+
+
+def _series_sinc3(z: float) -> float:
+    return 1.0 / 6.0 - z / 120.0 + z * z / 5040.0 - z**3 / 362880.0 + z**4 / 39916800.0
+
+
+def _series_sinc3_d(z: float) -> float:
+    return -1.0 / 120.0 + z / 2520.0 - z * z / 120960.0 + z**3 / 9979200.0
+
+
+def _series_sinc3_dd(z: float) -> float:
+    return 1.0 / 2520.0 - z / 60480.0 + z * z / 3326400.0
 
 
 def sinc_sqrt(z: float) -> float:
@@ -114,6 +150,28 @@ def cosc_sqrt_dd(z: float) -> float:
     return (z * math.cos(root) - 5.0 * root * math.sin(root) + 8.0 - 8.0 * math.cos(root)) / (4.0 * z**3)
 
 
+def sinc3_sqrt(z: float) -> float:
+    if abs(z) < 1e-8:
+        return _series_sinc3(z)
+    return (1.0 - sinc_sqrt(z)) / z
+
+
+def sinc3_sqrt_d(z: float) -> float:
+    if abs(z) < 1e-8:
+        return _series_sinc3_d(z)
+    sinc = sinc_sqrt(z)
+    return (sinc - 1.0 - z * sinc_sqrt_d(z)) / z**2
+
+
+def sinc3_sqrt_dd(z: float) -> float:
+    if abs(z) < 1e-8:
+        return _series_sinc3_dd(z)
+    sinc = sinc_sqrt(z)
+    return (
+        2.0 - 2.0 * sinc + 2.0 * z * sinc_sqrt_d(z) - z**2 * sinc_sqrt_dd(z)
+    ) / z**3
+
+
 LAMBDA_MODULES = {
     "SincSqrt": sinc_sqrt,
     "SincSqrtD": sinc_sqrt_d,
@@ -121,5 +179,7 @@ LAMBDA_MODULES = {
     "CoscSqrt": cosc_sqrt,
     "CoscSqrtD": cosc_sqrt_d,
     "CoscSqrtDD": cosc_sqrt_dd,
+    "Sinc3Sqrt": sinc3_sqrt,
+    "Sinc3SqrtD": sinc3_sqrt_d,
+    "Sinc3SqrtDD": sinc3_sqrt_dd,
 }
-

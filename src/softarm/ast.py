@@ -3,7 +3,11 @@ from __future__ import annotations
 from typing import Any
 import sympy as sp
 
-from .special import CoscSqrt, CoscSqrtD, CoscSqrtDD, SincSqrt, SincSqrtD, SincSqrtDD
+from .special import (
+    CoscSqrt, CoscSqrtD, CoscSqrtDD,
+    Sinc3Sqrt, Sinc3SqrtD, Sinc3SqrtDD,
+    SincSqrt, SincSqrtD, SincSqrtDD,
+)
 
 
 _HEADS = {
@@ -51,6 +55,7 @@ def decode(node: dict[str, Any]) -> sp.Expr:
         "add": sp.Add, "mul": sp.Mul, "pow": sp.Pow, "sin": sp.sin, "cos": sp.cos, "abs": sp.Abs,
         "SincSqrt": SincSqrt, "SincSqrtD": SincSqrtD, "SincSqrtDD": SincSqrtDD,
         "CoscSqrt": CoscSqrt, "CoscSqrtD": CoscSqrtD, "CoscSqrtDD": CoscSqrtDD,
+        "Sinc3Sqrt": Sinc3Sqrt, "Sinc3SqrtD": Sinc3SqrtD, "Sinc3SqrtDD": Sinc3SqrtDD,
     }
     constructor = constructors.get(head) or sp.Function(head)
     return constructor(*args)

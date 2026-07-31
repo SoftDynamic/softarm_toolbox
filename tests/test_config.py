@@ -59,3 +59,32 @@ def test_tendon_config_rejects_duplicate_span(tmp_path):
     )
     with pytest.raises(ConfigError, match="repeats section"):
         load_config(path)
+
+
+def test_cosserat_pcs_requires_supported_inertia_integration_combinations(tmp_path):
+    distributed = tmp_path / "distributed.toml"
+    distributed.write_text(
+        '[model]\nfamily="cosserat_pcs"\nsegments=1\ninertia="distributed"\n'
+        '[integration]\nmethod="analytic"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="requires integration.method='gauss'"):
+        load_config(distributed)
+
+    order_one = tmp_path / "order_one.toml"
+    order_one.write_text(
+        '[model]\nfamily="cosserat_pcs"\nsegments=1\ninertia="distributed"\n'
+        '[integration]\nmethod="gauss"\norder=1\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="order at least 2"):
+        load_config(order_one)
+
+    lumped = tmp_path / "lumped.toml"
+    lumped.write_text(
+        '[model]\nfamily="cosserat_pcs"\nsegments=1\ninertia="lumped"\n'
+        '[integration]\nmethod="gauss"\norder=2\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="not applicable"):
+        load_config(lumped)

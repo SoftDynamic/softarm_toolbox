@@ -71,3 +71,37 @@ def test_floating_base_has_coupled_coordinates_and_wrench_map():
     q[6:] = q_arm
     floating_mass = np.asarray(evaluate(q, p), dtype=float)
     np.testing.assert_allclose(floating_mass[6:, 6:], fixed_mass, rtol=1e-10, atol=1e-12)
+
+
+def test_cosserat_pcs_lumped_shapes_energy_and_nominal_mass():
+    plant = derive(ModelConfig(
+        family="cosserat_pcs", segments=1, inertia="lumped",
+        integration=IntegrationConfig(),
+    ))
+    assert plant.arm_coordinate_names == ["kx1", "ky1", "kz1", "vx1", "vy1", "vz1"]
+    assert plant.mass.shape == (6, 6)
+    assert plant.kinematics.shape == (4, 4)
+    assert plant.end_jacobian.shape == (6, 6)
+    defaults = {item.symbol: item.default for item in plant.parameters}
+    reference = {coordinate: 0.0 for coordinate in plant.q}
+    mass_function = sp.lambdify(
+        (plant.q, plant.p), plant.mass, [LAMBDA_MODULES, "numpy"]
+    )
+    mass = np.asarray(
+        mass_function(
+            np.zeros(len(plant.q)),
+            np.array([item.default for item in plant.parameters]),
+        ),
+        dtype=float,
+    )
+    np.testing.assert_allclose(mass, mass.T, atol=1e-13)
+    assert np.linalg.eigvalsh(mass).min() > 0
+    elastic_hessian = sp.hessian(
+        plant.potential.subs({sp.Symbol("gravity", real=True): 0}), plant.arm_q
+    )
+    expected = np.diag([0.6, 0.6, 0.1, 10.0, 10.0, 25.0])
+    np.testing.assert_allclose(
+        np.asarray(elastic_hessian.subs(defaults).subs(reference), dtype=float),
+        expected,
+        atol=1e-13,
+    )

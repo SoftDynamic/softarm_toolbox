@@ -1,0 +1,34 @@
+[model]
+family = "cosserat_pcs"
+segments = 1
+inertia = "lumped"
+
+[parameters]
+gravity = 9.81
+length = 0.45
+mass = 0.18
+Ixx = 0.0018
+Iyy = 0.0018
+Izz = 0.00010
+kappa0_x = 0.0
+kappa0_y = 0.0
+kappa0_z = 0.0
+nu0_x = 0.0
+nu0_y = 0.0
+nu0_z = 1.0
+EI_x = 1.1
+EI_y = 1.1
+GJ = 0.2
+GA_x = 20.0
+GA_y = 20.0
+EA = 50.0
+d_kx = 0.05
+d_ky = 0.05
+d_kz = 0.02
+d_vx = 0.10
+d_vy = 0.10
+d_vz = 0.10
+tip_mass = 0.10
+tip_Ixx = 0.01
+tip_Iyy = 0.01
+tip_Izz = 0.01

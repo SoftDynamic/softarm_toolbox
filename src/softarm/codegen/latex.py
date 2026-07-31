@@ -44,12 +44,15 @@ def _symbol_name(name: str) -> str:
     }
     if name in base:
         return base[name]
-    match = re.fullmatch(r"(d?)(bx|by|ax|ay|l)(\d+)", name)
+    match = re.fullmatch(r"(d?)(bx|by|ax|ay|kx|ky|kz|vx|vy|vz|l)(\d+)", name)
     if match:
         derivative, token, section = match.groups()
         stem, axis = {
             "bx": ("b", "x"), "by": ("b", "y"),
             "ax": ("a", "x"), "ay": ("a", "y"), "l": ("L", None),
+            "kx": (r"\delta\kappa", "x"), "ky": (r"\delta\kappa", "y"),
+            "kz": (r"\delta\kappa", "z"), "vx": (r"\delta\nu", "x"),
+            "vy": (r"\delta\nu", "y"), "vz": (r"\delta\nu", "z"),
         }[token]
         value = rf"{stem}_{{{section}}}" if axis is None else rf"{stem}_{{{axis},{section}}}"
         return rf"\dot{{{value}}}" if derivative else value
@@ -63,6 +66,14 @@ def _symbol_name(name: str) -> str:
             "d_bx": ("d", "b_x"), "d_by": ("d", "b_y"), "d_l": ("d", "L"),
             "EI_x": ("EI", "x"), "EI_y": ("EI", "y"), "d_ax": ("d", "a_x"),
             "d_ay": ("d", "a_y"),
+            "kappa0_x": (r"\kappa_0", "x"), "kappa0_y": (r"\kappa_0", "y"),
+            "kappa0_z": (r"\kappa_0", "z"), "nu0_x": (r"\nu_0", "x"),
+            "nu0_y": (r"\nu_0", "y"), "nu0_z": (r"\nu_0", "z"),
+            "GJ": ("GJ", None), "GA_x": ("GA", "x"), "GA_y": ("GA", "y"),
+            "EA": ("EA", None), "d_kx": ("d", r"\kappa_x"),
+            "d_ky": ("d", r"\kappa_y"), "d_kz": ("d", r"\kappa_z"),
+            "d_vx": ("d", r"\nu_x"), "d_vy": ("d", r"\nu_y"),
+            "d_vz": ("d", r"\nu_z"),
         }
         if token in labels:
             stem, detail = labels[token]
@@ -122,6 +133,15 @@ class SoftArmLatexPrinter(LatexPrinter):
 
     def _print_CoscSqrtDD(self, expr):
         return self._special("Cfun", expr.args[0], "''")
+
+    def _print_Sinc3Sqrt(self, expr):
+        return self._special("Tfun", expr.args[0])
+
+    def _print_Sinc3SqrtD(self, expr):
+        return self._special("Tfun", expr.args[0], "'")
+
+    def _print_Sinc3SqrtDD(self, expr):
+        return self._special("Tfun", expr.args[0], "''")
 
 
 def _math(expr: sp.Expr | sp.MatrixBase, printer: SoftArmLatexPrinter) -> str:
@@ -273,6 +293,31 @@ def _kinematics(plant: SymbolicPlant, printer: SoftArmLatexPrinter) -> str:
             ),
             r"Products above first order in the arm Ritz coordinates are discarded; the floating-base attitude, when present, remains exact.",
         ])
+    elif plant.config.family == "cosserat_pcs":
+        lines.extend([
+            r"\subsection{Cosserat Piecewise-Constant-Strain Section}",
+            _equation(
+                r"\Tfun(z)=\begin{cases}\dfrac{1-\Sfun(z)}{z},&z\ne0\\"
+                r"\dfrac16,&z=0\end{cases}"
+            ),
+            r"The generalized coordinates are increments from the configured stress-free angular and linear strains.",
+            _equation(
+                r"\kappa_i=\kappa_{0,i}+\delta\kappa_i,\qquad"
+                r"\nu_i=\nu_{0,i}+\delta\nu_i"
+            ),
+            _equation(
+                r"\Omega_i(\xi)=L_i\xi\widehat{\kappa_i},\qquad"
+                r"z_i(\xi)=(L_i\xi)^2\kappa_i^T\kappa_i"
+            ),
+            _equation(
+                r"R_i=I_3+\Sfun(z_i)\Omega_i+\Cfun(z_i)\Omega_i^2,\qquad"
+                r"r_i=\left[I_3+\Cfun(z_i)\Omega_i+\Tfun(z_i)\Omega_i^2\right]L_i\xi\nu_i"
+            ),
+            _equation(
+                r"H_i(\xi)=\begin{bmatrix}R_i(\xi)&r_i(\xi)\\0&1\end{bmatrix}",
+                "eq:local-transform",
+            ),
+        ])
     else:
         lines.append(r"This externally registered model family is documented from its public symbolic outputs.")
     lines.extend([
@@ -290,7 +335,7 @@ def _kinematics(plant: SymbolicPlant, printer: SoftArmLatexPrinter) -> str:
 def _energy_and_dynamics(plant: SymbolicPlant, printer: SoftArmLatexPrinter) -> str:
     if plant.config.inertia == "lumped":
         inertia_text = (
-            r"For the lumped PCC option, each section contribution is evaluated at $\xi=1/2$."
+            r"For the lumped inertia option, each section contribution is evaluated at $\xi=1/2$."
         )
     else:
         inertia_text = (
@@ -303,7 +348,7 @@ def _energy_and_dynamics(plant: SymbolicPlant, printer: SoftArmLatexPrinter) -> 
             inertia_text += r" This is the inertia assembly for the configured Ritz coordinates."
     section_gravity = (
         r"\sum_{i=1}^{N}m_i z_i(1/2)"
-        if plant.config.family == "pcc" and plant.config.inertia == "lumped"
+        if plant.config.inertia == "lumped"
         else r"\sum_{i=1}^{N}m_i\int_0^1z_i(\xi)\,d\xi"
     )
     gravity_terms = section_gravity + r"+m_ez_e"
@@ -345,6 +390,13 @@ def _energy_and_dynamics(plant: SymbolicPlant, printer: SoftArmLatexPrinter) -> 
             r"V_{\mathrm{elastic}}=\frac12\sum_{i=1}^{N}\left["
             r"\frac{EI_{y,i}a_{x,i}^{2}}{L_i^3}\int_0^1(\psi_x'')^2d\xi+"
             r"\frac{EI_{x,i}a_{y,i}^{2}}{L_i^3}\int_0^1(\psi_y'')^2d\xi\right]"
+        ))
+    elif plant.config.family == "cosserat_pcs":
+        lines.append(_equation(
+            r"V_{\mathrm{elastic}}=\frac12\sum_{i=1}^{N}L_i\left("
+            r"EI_{x,i}\delta\kappa_{x,i}^2+EI_{y,i}\delta\kappa_{y,i}^2+"
+            r"GJ_i\delta\kappa_{z,i}^2+GA_{x,i}\delta\nu_{x,i}^2+"
+            r"GA_{y,i}\delta\nu_{y,i}^2+EA_i\delta\nu_{z,i}^2\right)"
         ))
     lines.extend([
         _equation(r"D=\operatorname{diag}\!\left(" + _math(damping_diagonal, printer) + r"\right)"),
@@ -558,6 +610,7 @@ def generate_latex_document(
         r"\allowdisplaybreaks",
         r"\newcommand{\Sfun}{\mathcal{S}}",
         r"\newcommand{\Cfun}{\mathcal{C}}",
+        r"\newcommand{\Tfun}{\mathcal{T}}",
         rf"\title{{{_escape_text(title)}}}",
         r"\author{Generated by SoftArm Toolbox}",
         r"\date{}",

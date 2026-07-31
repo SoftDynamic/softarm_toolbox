@@ -21,8 +21,9 @@ $\tau_a$ 为软臂广义力，$w_B$ 为机体系基座扳手，$w_e$ 为 NED 世
 | --- | --- | --- | --- |
 | PCC | $[b_x,b_y,l]$ | 分段常曲率，可伸缩 | `distributed` 或 `lumped` |
 | Euler–Bernoulli Ritz | $[a_x,a_y]$ | 小挠度、小转角、不可伸缩 | 分布惯性 |
+| Cosserat PCS | $[\delta\kappa_x,\delta\kappa_y,\delta\kappa_z,\delta\nu_x,\delta\nu_y,\delta\nu_z]$ | 大转角、可剪切、可伸缩、可扭转 | `distributed` 或 `lumped` |
 
-两类模型均支持固定基座和 ZYX 欧拉角浮动基座。浮动基座坐标排列为
+三类模型均支持固定基座和 ZYX 欧拉角浮动基座。浮动基座坐标排列为
 
 ```text
 [base_x, base_y, base_z, base_roll, base_pitch, base_yaw, arm...]
@@ -33,7 +34,7 @@ $\tau_a$ 为软臂广义力，$w_B$ 为机体系基座扳手，$w_e$ 为 NED 世
 
 ### 1.2 功能范围
 
-- PCC 与 Euler–Bernoulli Ritz 多段软臂建模
+- PCC 与 Euler–Bernoulli Ritz 多段软臂建模，以及 Cosserat PCS 单段参考模型
 - 固定基座与浮动基座联合动力学
 - 解析积分与 Gauss–Legendre 积分
 - 通用跨段绳索驱动与严格绳长加速度约束
@@ -102,7 +103,7 @@ softarm build examples/config/pcc_distributed_n2.toml \
 
 | 配置节 | 用途 |
 | --- | --- |
-| `[model]` | 模型族、段数和 PCC 惯性类型 |
+| `[model]` | 模型族、段数和惯性类型 |
 | `[base]` | 固定或浮动基座及安装位姿 |
 | `[integration]` | 材料坐标积分方法与阶数 |
 | `[ritz]` | Euler 模型的归一化 Ritz 多项式 |
@@ -126,6 +127,24 @@ method = "analytic"
 
 `inertia` 可取 `distributed` 或 `lumped`。数值积分使用
 `method = "gauss"` 并设置正整数 `order`。
+
+Cosserat PCS 分布惯性要求显式选择至少二阶 Gauss 积分：
+
+```toml
+[model]
+family = "cosserat_pcs"
+segments = 1
+inertia = "distributed"
+
+[integration]
+method = "gauss"
+order = 2
+```
+
+集中惯性使用 `inertia = "lumped"`，并省略 `[integration]`。每段六个坐标是
+相对于可配置参考应变的增量，因此零坐标始终表示无应力参考构型。
+当前参考包和完整数值验证覆盖单段 Cosserat PCS。配置和 builder 保留通用
+`segments` 装配路径，但多段 Cosserat PCS 尚未验证，不作为当前版本的承诺能力。
 
 Euler–Bernoulli Ritz 模型按
 
@@ -489,7 +508,43 @@ V_{e,i}=
 \int_0^1\left(\psi_y''\right)^2d\xi.
 $$
 
-### 7.4 能量、质量矩阵与偏置力
+### 7.4 Cosserat PCS 运动学
+
+每段使用参考应变 $\kappa_{0,i},\nu_{0,i}$ 和六维应变增量：
+
+$$
+\kappa_i=\kappa_{0,i}+\delta\kappa_i,\qquad
+\nu_i=\nu_{0,i}+\delta\nu_i.
+$$
+
+令 $\Omega_i(\xi)=L_i\xi\widehat{\kappa_i}$、
+$z_i(\xi)=(L_i\xi)^2\kappa_i^T\kappa_i$，并定义
+
+$$
+\mathcal T(z)=\frac{1-\mathcal S(z)}{z},\qquad \mathcal T(0)=\frac16.
+$$
+
+则精确常应变变换为
+
+$$
+R_i=I+\mathcal S(z_i)\Omega_i+\mathcal C(z_i)\Omega_i^2,
+$$
+
+$$
+r_i=\left[I+\mathcal C(z_i)\Omega_i+\mathcal T(z_i)\Omega_i^2\right]L_i\xi\nu_i,
+\qquad
+H_i(\xi)=\begin{bmatrix}R_i&r_i\\0&1\end{bmatrix}.
+$$
+
+参考应变默认为 $\kappa_0=0,\nu_0=[0,0,1]^T$，也可通过运行时参数设置
+预弯、预扭或参考剪切。弹性能为
+
+$$
+V_{e,i}=\frac{L_i}{2}\delta\xi_i^T
+\operatorname{diag}(EI_x,EI_y,GJ,GA_x,GA_y,EA)\delta\xi_i.
+$$
+
+### 7.5 能量、质量矩阵与偏置力
 
 对于均匀分布惯性，$m_i$ 和 $I_i$ 表示整段总质量和整段局部惯量。
 归一化材料坐标下 $dm=m_i\,d\xi$，每段质量矩阵贡献为
@@ -588,7 +643,7 @@ $$
 $A=\partial\dot x/\partial x$ 以及软臂广义力、基座扳手和末端扳手对应的
 输入矩阵。
 
-### 7.5 材料坐标积分
+### 7.6 材料坐标积分
 
 解析积分为默认策略。Gauss–Legendre 积分显式配置为 $n$ 阶时，
 
@@ -601,7 +656,7 @@ $$
 其中 $(\eta_k,w_k)$ 为区间 $[-1,1]$ 上的 Gauss–Legendre 节点和权重。
 构建过程严格采用配置指定的积分策略。
 
-### 7.6 绳索驱动
+### 7.7 绳索驱动
 
 第 $a$ 个 PCC 单绳通道的长度坐标为
 
@@ -616,6 +671,15 @@ $$
 
 `signed` 通道采用相对截面中心对称布置的拮抗绳索半差动长度，
 其轴向分量为零。Euler 通道使用 Ritz 端部斜率构造相应弯曲项。
+
+Cosserat PCS 在偏置 $r=[r\cos\theta,r\sin\theta,0]^T$ 处使用精确常应变绳长
+
+$$
+\ell_+=L\|\nu+\kappa\times r\|,
+$$
+
+单绳通道取 $\ell_+$，signed 对取
+$\frac{L}{2}(\|\nu+\kappa\times r\|-\|\nu-\kappa\times r\|)$。
 
 全部通道统一满足
 
@@ -641,7 +705,7 @@ Q-h\\
 \end{bmatrix}.
 $$
 
-### 7.7 加速度级约束
+### 7.8 加速度级约束
 
 约束模型定义约束值、Jacobian、速度偏置、反力映射和稳定化参数：
 
@@ -681,6 +745,8 @@ $$
 | 两段 PCC，signed 绳索对 | `pcc_signed_pair_n2` |
 | 两段 Euler，两个 signed 绳索对 | `euler_two_signed_pairs_n2` |
 | 浮动基座 PCC，平面单点接触 | `pcc_flying_plane_contact_n1` |
+| 单段 Cosserat PCS，分布惯性与三绳驱动 | `cosserat_pcs_distributed_tendon_n1` |
+| 单段 Cosserat PCS，中点集中惯性 | `cosserat_pcs_lumped_n1` |
 
 MATLAB 绳索驱动脚本见
 [`examples/actuation`](examples/actuation/)。

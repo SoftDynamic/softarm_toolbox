@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import sympy as sp
+
 from softarm.ast import decode, encode
 from softarm.codegen import generate_matlab_bundle
 from softarm import derive_actuation, load_config
@@ -9,6 +11,7 @@ from softarm.config import (
     TendonSpanConfig,
 )
 from softarm.derive import derive
+from softarm.geometry import cosserat_pcs_transform
 from softarm.constraints import derive_constraint
 
 
@@ -27,6 +30,14 @@ def test_ast_round_trip_has_no_metadata():
     node = encode(plant.mass[0, 0])
     assert "version" not in node
     assert decode(node) == plant.mass[0, 0]
+
+
+def test_ast_round_trip_preserves_cosserat_special_functions():
+    symbols = sp.symbols("kx ky kz vx vy vz L", real=True)
+    expression = cosserat_pcs_transform(
+        sp.Matrix(symbols[:3]), sp.Matrix(symbols[3:6]), symbols[6]
+    )[0, 3]
+    assert decode(encode(expression)) == expression
 
 
 def test_minimal_manifest_and_fixed_functions(tmp_path):

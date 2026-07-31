@@ -9,7 +9,10 @@ testCase.TestData.root = root;
 end
 
 function testReferenceBundles(testCase)
-names = ["pcc_lumped_n2","pcc_distributed_n2","euler_ritz_n2"];
+names = [
+    "pcc_lumped_n2","pcc_distributed_n2","euler_ritz_n2", ...
+    "cosserat_pcs_lumped_n1","cosserat_pcs_distributed_tendon_n1"
+];
 for name = names
     bundle = fullfile(testCase.TestData.root,"examples","generated",name);
     plant = softarm.loadModel(bundle);
@@ -31,6 +34,28 @@ for name = names
         zeros(6,1),zeros(6,1),plant.parameters);
     verifyTrue(testCase,all(isfinite(dx)));
 end
+end
+
+function testCosseratReferenceAndTendon(testCase)
+root = testCase.TestData.root;
+plant = softarm.loadModel(fullfile(root,"examples","generated", ...
+    "cosserat_pcs_distributed_tendon_n1"));
+q = zeros(plant.nq,1);
+dq = zeros(plant.nq,1);
+verifyEqual(testCase,cellstr(plant.manifest.coordinates.arm), ...
+    {'kx1';'ky1';'kz1';'vx1';'vy1';'vz1'});
+H = plant.kinematics(q,plant.parameters);
+verifyEqual(testCase,H(:,:,1),[eye(3),[0;0;0.45];0,0,0,1],"AbsTol",1e-12);
+lengths = plant.actuation.coordinates(q,plant.parameters);
+verifyEqual(testCase,lengths,0.45*ones(3,1),"AbsTol",1e-12);
+Ja = plant.actuation.jacobian(q,plant.parameters);
+verifyEqual(testCase,rank(Ja),3);
+tension = [1.0;1.5;2.0];
+[tau,isFeasible] = plant.actuation.force(q,tension,plant.parameters);
+verifyTrue(testCase,isFeasible);
+verifyEqual(testCase,tau,-Ja.'*tension,"AbsTol",1e-12);
+ddq = plant.forwardDynamics(q,dq,tau,zeros(6,1),zeros(6,1),plant.parameters);
+verifyTrue(testCase,all(isfinite(ddq)));
 end
 
 function testLinearization(testCase)

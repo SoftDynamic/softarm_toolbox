@@ -1,0 +1,39 @@
+function Bv = softarm_vehicle_wrench_map(q,p)
+% Generated from the SymPy model. Do not edit.
+%#codegen
+kx1 = q(1);
+ky1 = q(2);
+kz1 = q(3);
+vx1 = q(4);
+vy1 = q(5);
+vz1 = q(6);
+s1_length = p(1);
+s1_mass = p(2);
+s1_Ixx = p(3);
+s1_Iyy = p(4);
+s1_Izz = p(5);
+s1_kappa0_x = p(6);
+s1_kappa0_y = p(7);
+s1_kappa0_z = p(8);
+s1_nu0_x = p(9);
+s1_nu0_y = p(10);
+s1_nu0_z = p(11);
+s1_EI_x = p(12);
+s1_EI_y = p(13);
+s1_GJ = p(14);
+s1_GA_x = p(15);
+s1_GA_y = p(16);
+s1_EA = p(17);
+s1_d_kx = p(18);
+s1_d_ky = p(19);
+s1_d_kz = p(20);
+s1_d_vx = p(21);
+s1_d_vy = p(22);
+s1_d_vz = p(23);
+gravity = p(24);
+tip_mass = p(25);
+tip_Ixx = p(26);
+tip_Iyy = p(27);
+tip_Izz = p(28);
+Bv = reshape([0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0],6,6);
+end

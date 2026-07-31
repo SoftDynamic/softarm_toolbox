@@ -8,8 +8,8 @@ import sympy as sp
 
 from .config import ModelConfig, broadcast
 from .geometry import (
-    angular_jacobian, euler_ritz_transform, pcc_transform, polynomial,
-    transform_rpy,
+    angular_jacobian, cosserat_pcs_transform, euler_ritz_transform,
+    pcc_transform, polynomial, transform_rpy,
 )
 from .integration import integrate_unit
 
@@ -91,10 +91,11 @@ class _ParameterBuilder:
         return result
 
 
-def _arm_coordinates(config: ModelConfig) -> tuple[sp.Matrix, sp.Matrix]:
+def _arm_coordinates(
+    config: ModelConfig, labels: tuple[str, ...]
+) -> tuple[sp.Matrix, sp.Matrix]:
     names: list[str] = []
     velocity_names: list[str] = []
-    labels = ("bx", "by", "l") if config.family == "pcc" else ("ax", "ay")
     for section in range(1, config.segments + 1):
         for label in labels:
             names.append(f"{label}{section}")
@@ -285,7 +286,7 @@ def _derive_common(
 
 
 def _derive_pcc(config: ModelConfig) -> SymbolicPlant:
-    q, dq = _arm_coordinates(config)
+    q, dq = _arm_coordinates(config, ("bx", "by", "l"))
     pb = _ParameterBuilder(config)
     lengths = pb.sections("rest_length", 0.5)
     masses = pb.sections("mass", 0.2)
@@ -320,7 +321,7 @@ def _derive_pcc(config: ModelConfig) -> SymbolicPlant:
 
 
 def _derive_euler(config: ModelConfig) -> SymbolicPlant:
-    q, dq = _arm_coordinates(config)
+    q, dq = _arm_coordinates(config, ("ax", "ay"))
     pb = _ParameterBuilder(config)
     lengths = pb.sections("length", 0.5)
     masses = pb.sections("mass", 0.2)
@@ -362,12 +363,81 @@ def _derive_euler(config: ModelConfig) -> SymbolicPlant:
     return _derive_common(config, q, dq, pb, local, lengths, masses, inertias, damping, elastic, True, True)
 
 
+def _derive_cosserat_pcs(config: ModelConfig) -> SymbolicPlant:
+    q, dq = _arm_coordinates(config, ("kx", "ky", "kz", "vx", "vy", "vz"))
+    pb = _ParameterBuilder(config)
+    lengths = pb.sections("length", 0.5)
+    masses = pb.sections("mass", 0.2)
+    ixx = pb.sections("Ixx", 0.002)
+    iyy = pb.sections("Iyy", 0.002)
+    izz = pb.sections("Izz", 0.0001)
+    kappa0_x = pb.sections("kappa0_x", 0.0)
+    kappa0_y = pb.sections("kappa0_y", 0.0)
+    kappa0_z = pb.sections("kappa0_z", 0.0)
+    nu0_x = pb.sections("nu0_x", 0.0)
+    nu0_y = pb.sections("nu0_y", 0.0)
+    nu0_z = pb.sections("nu0_z", 1.0)
+    eix = pb.sections("EI_x", 1.2)
+    eiy = pb.sections("EI_y", 1.2)
+    gj = pb.sections("GJ", 0.2)
+    gax = pb.sections("GA_x", 20.0)
+    gay = pb.sections("GA_y", 20.0)
+    ea = pb.sections("EA", 50.0)
+    dkx = pb.sections("d_kx", 0.05)
+    dky = pb.sections("d_ky", 0.05)
+    dkz = pb.sections("d_kz", 0.02)
+    dvx = pb.sections("d_vx", 0.1)
+    dvy = pb.sections("d_vy", 0.1)
+    dvz = pb.sections("d_vz", 0.1)
+    inertias = [sp.diag(ixx[i], iyy[i], izz[i]) for i in range(config.segments)]
+
+    def local(section: int, xi: sp.Expr) -> sp.Matrix:
+        offset = 6 * section
+        kappa = sp.Matrix([
+            kappa0_x[section] + q[offset],
+            kappa0_y[section] + q[offset + 1],
+            kappa0_z[section] + q[offset + 2],
+        ])
+        nu = sp.Matrix([
+            nu0_x[section] + q[offset + 3],
+            nu0_y[section] + q[offset + 4],
+            nu0_z[section] + q[offset + 5],
+        ])
+        return cosserat_pcs_transform(kappa, nu, lengths[section], xi)
+
+    elastic = sp.S.Zero
+    damping: list[sp.Expr] = []
+    for section in range(config.segments):
+        offset = 6 * section
+        elastic += lengths[section] * sp.Rational(1, 2) * (
+            eix[section] * q[offset] ** 2
+            + eiy[section] * q[offset + 1] ** 2
+            + gj[section] * q[offset + 2] ** 2
+            + gax[section] * q[offset + 3] ** 2
+            + gay[section] * q[offset + 4] ** 2
+            + ea[section] * q[offset + 5] ** 2
+        )
+        damping.extend([
+            lengths[section] * dkx[section],
+            lengths[section] * dky[section],
+            lengths[section] * dkz[section],
+            lengths[section] * dvx[section],
+            lengths[section] * dvy[section],
+            lengths[section] * dvz[section],
+        ])
+    return _derive_common(
+        config, q, dq, pb, local, lengths, masses, inertias, damping, elastic,
+        config.inertia == "distributed",
+    )
+
+
 _CACHE: dict[str, SymbolicPlant] = {}
 
 
 _MODEL_BUILDERS: dict[str, Callable[[ModelConfig], SymbolicPlant]] = {
     "pcc": _derive_pcc,
     "euler": _derive_euler,
+    "cosserat_pcs": _derive_cosserat_pcs,
 }
 
 
