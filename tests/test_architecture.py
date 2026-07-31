@@ -41,7 +41,7 @@ def test_wolfram_bridge_contains_no_model_specific_vocabulary():
         ROOT / "src" / "softarm" / "backends" / "wolfram_bridge.wls"
     ).read_text(encoding="utf-8").lower()
     for forbidden in (
-        "pcc", "euler", "cosserat", "tendon", "plane_point_contact"
+        "euler", "cosserat", "tendon", "plane_point_contact"
     ):
         assert forbidden not in bridge
 

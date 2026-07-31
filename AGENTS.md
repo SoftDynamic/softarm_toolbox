@@ -36,7 +36,7 @@
 - Builder 接收 `ModelConfig` 并返回 `SymbolicPlant`。
 - 仓库内置模型注册到 `derive.py` 的 `_MODEL_BUILDERS`。
 - 外部 Python 模型在调用 `derive` 前通过
-  `softarm.register_model(name, builder)` 注册。CLI 集成需要在启动阶段显式导入
+  `softarm.register_model(rod, parameterization, builder, validator=...)` 注册。CLI 集成需要在启动阶段显式导入
   注册模块。
 - 新模型应明确选择适用假设，包括小挠度或大转角、可伸长或不可伸长、
   有剪切或无剪切。不同阶次或相互冲突的假设应定义为独立模型。
@@ -45,7 +45,7 @@
 
 ### 2.3 特殊函数与可去奇点
 
-- `SincSqrt` 和 `CoscSqrt` 表示 PCC 零曲率处的解析延拓，并提供一、二阶解析导数。
+- `SincSqrt` 和 `CoscSqrt` 表示 PCS 零曲率处的解析延拓，并提供一、二阶解析导数。
 - MATLAB 数值函数在 $|\rho^2|<10^{-8}$ 区间使用 Taylor 多项式。
 - 新增特殊函数时，在 `src/softarm/special.py` 中定义 SymPy 函数、解析导数和
   独立数值实现。
@@ -141,7 +141,7 @@ matlab -batch "addpath('matlab'); r=runtests('matlab/tests'); assertSuccess(r)"
 - 独立能量或积分计算
 - Coriolis 能量恒等式
 - 外力虚功
-- PCC 零曲率处的函数值及一、二阶导数
+- PCS 零曲率处的函数值及一、二阶导数
 - SymPy、Wolfram 和 MATLAB 数值一致性
 - 执行器虚功、轴向模态和严格加速度可行性
 - 约束 Jacobian、反力映射和摩擦耗散

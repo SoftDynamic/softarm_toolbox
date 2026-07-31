@@ -16,14 +16,15 @@ from softarm.config import (
 )
 from softarm.constraints import derive_constraint
 from softarm.derive import derive
-from softarm.geometry import cosserat_pcs_transform
+from softarm.geometry import pcs_transform
 
 ROOT = Path(__file__).parents[1]
 
 
 def _small_plant():
     return derive(ModelConfig(
-        family="euler", segments=1, integration=IntegrationConfig("analytic"),
+        rod="euler_bernoulli", parameterization="ritz", segments=1,
+        integration=IntegrationConfig("analytic"),
         ritz_x=(0.0, 0.0, 1.5, -0.5), ritz_y=(0.0, 0.0, 1.5, -0.5),
     ))
 
@@ -37,7 +38,7 @@ def test_ast_round_trip_uses_the_current_dag_schema():
 
 def test_ast_round_trip_preserves_cosserat_special_functions():
     symbols = sp.symbols("kx ky kz vx vy vz L", real=True)
-    expression = cosserat_pcs_transform(
+    expression = pcs_transform(
         sp.Matrix(symbols[:3]), sp.Matrix(symbols[3:6]), symbols[6]
     )[0, 3]
     assert decode_dag(encode_dag([expression])) == [expression]
@@ -49,6 +50,8 @@ def test_minimal_manifest_and_fixed_functions(tmp_path):
     manifest = json.loads((tmp_path / "manifest.json").read_text())
     assert set(manifest) == {"model", "coordinates", "parameters", "actuation", "constraint"}
     assert manifest["coordinates"]["base"] == []
+    assert manifest["model"]["rod"] == "euler_bernoulli"
+    assert manifest["model"]["parameterization"] == "ritz"
     assert len(manifest["coordinates"]["arm"]) == 2
     for filename in (
         "softarm_mass.m", "softarm_bias.m", "softarm_kinematics.m",
@@ -64,7 +67,9 @@ def test_minimal_manifest_and_fixed_functions(tmp_path):
 
 
 def test_actuated_bundle_keeps_minimal_manifest_and_generic_functions(tmp_path):
-    config = load_config(ROOT / "examples/config/pcc_three_tendon_extensible_n2.toml")
+    config = load_config(
+        ROOT / "examples/config/extensible_kirchhoff_pcs_three_tendon_n2.toml"
+    )
     plant = derive(config)
     actuation = derive_actuation(plant)
     generate_matlab_bundle(plant, tmp_path, actuation=actuation)
@@ -101,7 +106,8 @@ def test_force_only_actuation_omits_strict_acceleration_function(tmp_path):
 
 def test_constraint_bundle_has_manifest_metadata_and_solver(tmp_path):
     config = ModelConfig(
-        family="euler", segments=1, integration=IntegrationConfig("analytic"),
+        rod="euler_bernoulli", parameterization="ritz", segments=1,
+        integration=IntegrationConfig("analytic"),
         ritz_x=(0.0, 0.0, 1.5, -0.5), ritz_y=(0.0, 0.0, 1.5, -0.5),
         constraint=ConstraintConfig("plane_point_contact", {
             "family": "plane_point_contact", "plane_normal": [0.0, 0.0, -1.0],

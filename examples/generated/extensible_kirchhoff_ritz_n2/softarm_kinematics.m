@@ -1,0 +1,46 @@
+function H = softarm_kinematics(q,p)
+% Generated from the SymPy model. Do not edit.
+%#codegen
+ax1 = q(1);
+ay1 = q(2);
+az1 = q(3);
+ax2 = q(4);
+ay2 = q(5);
+az2 = q(6);
+s1_rest_length = p(1);
+s2_rest_length = p(2);
+s1_mass = p(3);
+s2_mass = p(4);
+s1_Ixx = p(5);
+s2_Ixx = p(6);
+s1_Iyy = p(7);
+s2_Iyy = p(8);
+s1_Izz = p(9);
+s2_Izz = p(10);
+s1_EI_x = p(11);
+s2_EI_x = p(12);
+s1_EI_y = p(13);
+s2_EI_y = p(14);
+s1_EA = p(15);
+s2_EA = p(16);
+s1_d_ax = p(17);
+s2_d_ax = p(18);
+s1_d_ay = p(19);
+s2_d_ay = p(20);
+s1_d_az = p(21);
+s2_d_az = p(22);
+gravity = p(23);
+tip_mass = p(24);
+tip_Ixx = p(25);
+tip_Iyy = p(26);
+tip_Izz = p(27);
+t0 = 3./(2*s1_rest_length);
+t1 = ax1.*t0;
+t2 = ay1.*t0;
+t3 = az1 + s1_rest_length;
+t4 = 3./(2*s2_rest_length);
+t5 = ax2.*t4 + t1;
+t6 = ay2.*t4 + t2;
+t7 = s2_rest_length.*t0 + 1;
+H = reshape([1;0;-t1;0;0;1;-t2;0;t1;t2;1;0;ax1;ay1;t3;1;1;0;-t5;0;0;1;-t6;0;t5;t6;1;0;ax1.*t7 + ax2;ay1.*t7 + ay2;az2 + s2_rest_length + t3;1],4,4,2);
+end

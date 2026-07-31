@@ -43,7 +43,7 @@ function buildConstrainedPlant(outputPath)
 model = "softarm_constrained_plant";
 prepare(model,"5");
 defaultBundle = fullfile("..","..","examples","generated", ...
-    "pcc_flying_plane_contact_n1");
+    "extensible_kirchhoff_pcs_flying_plane_contact_n1");
 modelWorkspace = get_param(model,"ModelWorkspace");
 assignin(modelWorkspace,"Bundle",char(defaultBundle));
 set_param(model,"ParameterArgumentNames","Bundle");
@@ -113,7 +113,7 @@ prepare(model,"1");
 save_system(model,outputPath);
 set_param(model,"ReturnWorkspaceOutputs","off");
 set_param(model,"InitFcn", ...
-    "softarm_root=fileparts(get_param(bdroot,'FileName'));addpath(fullfile(softarm_root,'matlab'));softarm.initModel(fullfile(softarm_root,'examples','generated','pcc_flying_plane_contact_n1'));");
+    "softarm_root=fileparts(get_param(bdroot,'FileName'));addpath(fullfile(softarm_root,'matlab'));softarm.initModel(fullfile(softarm_root,'examples','generated','extensible_kirchhoff_pcs_flying_plane_contact_n1'));");
 add_block("simulink/Sources/Constant",model+"/Arm generalized force", ...
     "Position",[25 45 135 75],"Value","zeros(softarm_narm,1)");
 add_block("simulink/Sources/Constant",model+"/Vehicle wrench", ...
@@ -125,7 +125,7 @@ add_block("simulink/Sources/Constant",model+"/Constraint acceleration", ...
 add_block("built-in/ModelReference",model+"/Constrained Plant", ...
     "ModelName","softarm_constrained_plant","Position",[230 45 420 230]);
 set_param(model+"/Constrained Plant","Bundle", ...
-    "'../generated/pcc_flying_plane_contact_n1'");
+    "'../generated/extensible_kirchhoff_pcs_flying_plane_contact_n1'");
 names = ["q","dq","tip_pose","normal_reaction","contact_feasible","constraint_rcond"];
 for index = 1:numel(names)
     addOut(model,names(index),[525 25+42*index 555 45+42*index]);

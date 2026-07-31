@@ -57,7 +57,8 @@ def _tendon_builder(
     plant_parameters = _parameter_by_name(plant)
 
     xi = sp.Symbol("xi", real=True)
-    if plant.config.family == "euler":
+    combination = (plant.config.rod, plant.config.parameterization)
+    if plant.config.parameterization == "ritz":
         psi_x = polynomial(plant.config.ritz_x or (), xi)
         psi_y = polynomial(plant.config.ritz_y or (), xi)
         slope_x = sp.diff(psi_x, xi).subs(xi, sp.S.One)
@@ -72,13 +73,20 @@ def _tendon_builder(
             parameters.append(RuntimeParameter(parameter_name, radius, span.radius))
             cosine = sp.cos(sp.Float(str(span.angle)))
             sine = sp.sin(sp.Float(str(span.angle)))
-            if plant.config.family == "pcc":
+            if combination == ("extensible_kirchhoff", "pcs"):
                 offset = 3 * section
                 bending = plant.arm_q[offset] * cosine + plant.arm_q[offset + 1] * sine
                 if channel.kind == "unilateral":
                     coordinate += plant.arm_q[offset + 2]
                 coordinate -= radius * bending
-            elif plant.config.family == "euler":
+            elif combination == ("euler_bernoulli", "pcs"):
+                offset = 2 * section
+                length = plant_parameters[f"s{span.section}_length"]
+                bending = plant.arm_q[offset] * cosine + plant.arm_q[offset + 1] * sine
+                if channel.kind == "unilateral":
+                    coordinate += length
+                coordinate -= radius * bending
+            elif combination == ("euler_bernoulli", "ritz"):
                 offset = 2 * section
                 length = plant_parameters[f"s{span.section}_length"]
                 bending = (
@@ -88,7 +96,17 @@ def _tendon_builder(
                 if channel.kind == "unilateral":
                     coordinate += length
                 coordinate -= radius * bending
-            elif plant.config.family == "cosserat_pcs":
+            elif combination == ("extensible_kirchhoff", "ritz"):
+                offset = 3 * section
+                length = plant_parameters[f"s{span.section}_rest_length"]
+                bending = (
+                    plant.arm_q[offset] * cosine * slope_x
+                    + plant.arm_q[offset + 1] * sine * slope_y
+                ) / length
+                if channel.kind == "unilateral":
+                    coordinate += length + plant.arm_q[offset + 2]
+                coordinate -= radius * bending
+            elif combination == ("cosserat", "pcs"):
                 offset = 6 * section
                 length = plant_parameters[f"s{span.section}_length"]
                 kappa = sp.Matrix([
@@ -112,7 +130,8 @@ def _tendon_builder(
                     coordinate += (plus_length - minus_length) / 2
             else:
                 raise ValueError(
-                    f"built-in tendon routing does not support model family {plant.config.family!r}"
+                    "built-in tendon routing does not support model combination "
+                    f"{combination!r}"
                 )
         coordinates.append(coordinate)
 
@@ -155,7 +174,9 @@ def _validate_strict_rank(plant: SymbolicPlant, actuation: ActuationModel) -> No
         item.symbol: item.default for item in plant.parameters + actuation.parameters
     }
     reference = {coordinate: 0.0 for coordinate in plant.arm_q}
-    if plant.config.family == "pcc":
+    if (plant.config.rod, plant.config.parameterization) == (
+        "extensible_kirchhoff", "pcs"
+    ):
         for section in range(plant.config.segments):
             rest = next(
                 item.default for item in plant.parameters

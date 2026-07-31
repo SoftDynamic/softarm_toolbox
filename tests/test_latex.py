@@ -49,7 +49,8 @@ REFERENCE_TEX = tuple(sorted(
 
 def _euler_config(**changes):
     values = dict(
-        family="euler",
+        rod="euler_bernoulli",
+        parameterization="ritz",
         segments=1,
         integration=IntegrationConfig("analytic"),
         ritz_x=(0.0, 0.0, 1.5, -0.5),
@@ -61,7 +62,8 @@ def _euler_config(**changes):
 
 def test_document_sections_are_model_specific_and_paper_friendly(tmp_path):
     fixed = derive(ModelConfig(
-        family="pcc", segments=1, inertia="lumped", integration=IntegrationConfig()
+        rod="extensible_kirchhoff", parameterization="pcs", segments=1,
+        inertia="lumped", integration=IntegrationConfig()
     ))
     first = tmp_path / "first"
     second = tmp_path / "second"
@@ -69,8 +71,8 @@ def test_document_sections_are_model_specific_and_paper_friendly(tmp_path):
     generate_latex_document(fixed, second)
     text = (first / "softarm_model.tex").read_text(encoding="utf-8")
     assert text == (second / "softarm_model.tex").read_text(encoding="utf-8")
-    assert "PCC Section" in text
-    assert "Euler--Bernoulli Ritz Section" not in text
+    assert "Piecewise-Constant-Strain Parameterization" in text
+    assert "Ritz Parameterization" not in text
     assert "The arm base is fixed" in text
     assert r"\Sfun" in text and r"\Cfun" in text
     assert "SincSqrt" not in text and "CoscSqrt" not in text
@@ -80,8 +82,8 @@ def test_document_sections_are_model_specific_and_paper_friendly(tmp_path):
     floating = derive(_euler_config(base=BaseConfig("floating_rpy")))
     generate_latex_document(floating, tmp_path / "floating")
     floating_text = (tmp_path / "floating/softarm_model.tex").read_text(encoding="utf-8")
-    assert "Euler--Bernoulli Ritz Section" in floating_text
-    assert "PCC Section" not in floating_text
+    assert "Ritz Parameterization" in floating_text
+    assert "Piecewise-Constant-Strain Parameterization" not in floating_text
     assert r"H_{WB}" in floating_text
     assert "ZYX convention" in floating_text
     assert r"M_B=" in floating_text
@@ -146,7 +148,8 @@ def test_cli_tex_appendix_flag_builds_same_document(tmp_path):
     config.write_text(
         """
 [model]
-family = "euler"
+rod = "euler_bernoulli"
+parameterization = "ritz"
 segments = 1
 
 [integration]
@@ -205,12 +208,12 @@ def test_reference_documents_compile_with_pdflatex(source, tmp_path):
 
 def test_cosserat_document_describes_pcs_and_lumped_inertia(tmp_path):
     plant = derive(ModelConfig(
-        family="cosserat_pcs", segments=1, inertia="lumped",
+        rod="cosserat", parameterization="pcs", segments=1, inertia="lumped",
         integration=IntegrationConfig(),
     ))
     generate_latex_document(plant, tmp_path)
     text = (tmp_path / "softarm_model.tex").read_text(encoding="utf-8")
-    assert "Cosserat Piecewise-Constant-Strain Section" in text
+    assert "Piecewise-Constant-Strain Parameterization" in text
     assert r"\kappa_{0,x,1}" in text
     assert r"\nu_{0,z,1}" in text
     assert r"\kappa_0_{x,1}" not in text

@@ -6,14 +6,13 @@ from dataclasses import dataclass, replace
 
 import sympy as sp
 
-from .config import ModelConfig, broadcast
+from .config import ConfigError, ModelConfig, _validate_ritz, broadcast
 from .dynamics import SympyBatchDifferentiator, assemble_bias
 from .geometry import (
     angular_jacobian,
-    cosserat_pcs_transform,
-    euler_ritz_transform,
-    pcc_transform,
+    pcs_transform,
     polynomial,
+    ritz_transform,
     transform_rpy,
 )
 from .integration import integrate_unit, unit_gauss_rule
@@ -24,6 +23,16 @@ class RuntimeParameter:
     name: str
     symbol: sp.Symbol
     default: float
+
+
+ModelBuilder = Callable[[ModelConfig], "SymbolicPlant"]
+ModelValidator = Callable[[ModelConfig], None]
+
+
+@dataclass(frozen=True)
+class RegisteredModel:
+    builder: ModelBuilder
+    validator: ModelValidator | None = None
 
 
 @dataclass
@@ -315,7 +324,19 @@ def _derive_common(
     )
 
 
-def _derive_pcc(config: ModelConfig) -> SymbolicPlant:
+def _kirchhoff_pcs_strains(
+    bx: sp.Expr,
+    by: sp.Expr,
+    current_length: sp.Expr,
+    reference_length: sp.Expr,
+) -> tuple[sp.Matrix, sp.Matrix]:
+    return (
+        sp.Matrix([-by / reference_length, bx / reference_length, 0]),
+        sp.Matrix([0, 0, current_length / reference_length]),
+    )
+
+
+def _derive_extensible_kirchhoff_pcs(config: ModelConfig) -> SymbolicPlant:
     q, dq = _arm_coordinates(config, ("bx", "by", "l"))
     pb = _ParameterBuilder(config)
     lengths = pb.sections("rest_length", 0.5)
@@ -333,7 +354,10 @@ def _derive_pcc(config: ModelConfig) -> SymbolicPlant:
 
     def local(section: int, xi: sp.Expr) -> sp.Matrix:
         offset = 3 * section
-        return pcc_transform(q[offset], q[offset + 1], q[offset + 2], xi)
+        kappa, nu = _kirchhoff_pcs_strains(
+            q[offset], q[offset + 1], q[offset + 2], lengths[section]
+        )
+        return pcs_transform(kappa, nu, lengths[section], xi)
 
     elastic = sp.S.Zero
     damping: list[sp.Expr] = []
@@ -351,7 +375,7 @@ def _derive_pcc(config: ModelConfig) -> SymbolicPlant:
     )
 
 
-def _derive_euler(config: ModelConfig) -> SymbolicPlant:
+def _derive_euler_bernoulli_ritz(config: ModelConfig) -> SymbolicPlant:
     q, dq = _arm_coordinates(config, ("ax", "ay"))
     pb = _ParameterBuilder(config)
     lengths = pb.sections("length", 0.5)
@@ -372,9 +396,10 @@ def _derive_euler(config: ModelConfig) -> SymbolicPlant:
 
     def local(section: int, local_xi: sp.Expr) -> sp.Matrix:
         offset = 2 * section
-        return euler_ritz_transform(
-            q[offset], q[offset + 1], lengths[section], local_xi,
+        return ritz_transform(
+            q[offset], q[offset + 1], sp.S.Zero, lengths[section], local_xi,
             psi_x.subs(xi, local_xi), psi_y.subs(xi, local_xi),
+            sp.S.Zero,
             dpsi_x.subs(xi, local_xi), dpsi_y.subs(xi, local_xi),
         )
 
@@ -400,6 +425,104 @@ def _derive_euler(config: ModelConfig) -> SymbolicPlant:
     return _derive_common(
         config, q, dq, pb, local, lengths, masses, inertias, damping,
         elastic, True, True
+    )
+
+
+def _derive_euler_bernoulli_pcs(config: ModelConfig) -> SymbolicPlant:
+    q, dq = _arm_coordinates(config, ("bx", "by"))
+    pb = _ParameterBuilder(config)
+    lengths = pb.sections("length", 0.5)
+    masses = pb.sections("mass", 0.2)
+    ixx = pb.sections("Ixx", 0.002)
+    iyy = pb.sections("Iyy", 0.002)
+    izz = pb.sections("Izz", 0.0001)
+    eix = pb.sections("EI_x", 1.2)
+    eiy = pb.sections("EI_y", 1.2)
+    dbx = pb.sections("d_bx", 0.05)
+    dby = pb.sections("d_by", 0.05)
+    inertias = [sp.diag(ixx[i], iyy[i], izz[i]) for i in range(config.segments)]
+
+    def local(section: int, xi: sp.Expr) -> sp.Matrix:
+        offset = 2 * section
+        kappa, nu = _kirchhoff_pcs_strains(
+            q[offset], q[offset + 1], lengths[section], lengths[section]
+        )
+        return pcs_transform(kappa, nu, lengths[section], xi)
+
+    elastic = sp.S.Zero
+    damping: list[sp.Expr] = []
+    for section in range(config.segments):
+        offset = 2 * section
+        elastic += sp.Rational(1, 2) * (
+            eiy[section] * q[offset] ** 2 / lengths[section]
+            + eix[section] * q[offset + 1] ** 2 / lengths[section]
+        )
+        damping.extend([dbx[section], dby[section]])
+    return _derive_common(
+        config, q, dq, pb, local, lengths, masses, inertias, damping,
+        elastic, config.inertia == "distributed",
+    )
+
+
+def _derive_extensible_kirchhoff_ritz(config: ModelConfig) -> SymbolicPlant:
+    q, dq = _arm_coordinates(config, ("ax", "ay", "az"))
+    pb = _ParameterBuilder(config)
+    lengths = pb.sections("rest_length", 0.5)
+    masses = pb.sections("mass", 0.2)
+    ixx = pb.sections("Ixx", 0.002)
+    iyy = pb.sections("Iyy", 0.002)
+    izz = pb.sections("Izz", 0.0001)
+    eix = pb.sections("EI_x", 1.2)
+    eiy = pb.sections("EI_y", 1.2)
+    ea = pb.sections("EA", 50.0)
+    dax = pb.sections("d_ax", 0.05)
+    day = pb.sections("d_ay", 0.05)
+    daz = pb.sections("d_az", 0.1)
+    inertias = [sp.diag(ixx[i], iyy[i], izz[i]) for i in range(config.segments)]
+    xi = sp.Symbol("xi", real=True, nonnegative=True)
+    psi_x = polynomial(config.ritz_x or (), xi)
+    psi_y = polynomial(config.ritz_y or (), xi)
+    psi_z = polynomial(config.ritz_z or (), xi)
+    dpsi_x = sp.diff(psi_x, xi)
+    dpsi_y = sp.diff(psi_y, xi)
+
+    def local(section: int, local_xi: sp.Expr) -> sp.Matrix:
+        offset = 3 * section
+        return ritz_transform(
+            q[offset], q[offset + 1], q[offset + 2], lengths[section], local_xi,
+            psi_x.subs(xi, local_xi), psi_y.subs(xi, local_xi),
+            psi_z.subs(xi, local_xi),
+            dpsi_x.subs(xi, local_xi), dpsi_y.subs(xi, local_xi),
+        )
+
+    curvature_x = sp.diff(psi_x, xi, 2)
+    curvature_y = sp.diff(psi_y, xi, 2)
+    axial_strain = sp.diff(psi_z, xi)
+    integral_x = integrate_unit(
+        curvature_x**2, xi, config.integration,
+        "extensible Kirchhoff x Ritz stiffness",
+    )
+    integral_y = integrate_unit(
+        curvature_y**2, xi, config.integration,
+        "extensible Kirchhoff y Ritz stiffness",
+    )
+    integral_z = integrate_unit(
+        axial_strain**2, xi, config.integration,
+        "extensible Kirchhoff z Ritz stiffness",
+    )
+    elastic = sp.S.Zero
+    damping: list[sp.Expr] = []
+    for section in range(config.segments):
+        offset = 3 * section
+        elastic += sp.Rational(1, 2) * (
+            eiy[section] * q[offset] ** 2 * integral_x / lengths[section] ** 3
+            + eix[section] * q[offset + 1] ** 2 * integral_y / lengths[section] ** 3
+            + ea[section] * q[offset + 2] ** 2 * integral_z / lengths[section]
+        )
+        damping.extend([dax[section], day[section], daz[section]])
+    return _derive_common(
+        config, q, dq, pb, local, lengths, masses, inertias, damping,
+        elastic, True, True,
     )
 
 
@@ -443,7 +566,7 @@ def _derive_cosserat_pcs(config: ModelConfig) -> SymbolicPlant:
             nu0_y[section] + q[offset + 4],
             nu0_z[section] + q[offset + 5],
         ])
-        return cosserat_pcs_transform(kappa, nu, lengths[section], xi)
+        return pcs_transform(kappa, nu, lengths[section], xi)
 
     elastic = sp.S.Zero
     damping: list[sp.Expr] = []
@@ -471,40 +594,115 @@ def _derive_cosserat_pcs(config: ModelConfig) -> SymbolicPlant:
     )
 
 
+def _validate_no_ritz_options(config: ModelConfig) -> None:
+    if any(item is not None for item in (config.ritz_x, config.ritz_y, config.ritz_z)):
+        raise ConfigError("ritz coefficients are only applicable to Ritz parameterization")
+
+
+def _validate_pcs_inertia(config: ModelConfig) -> None:
+    _validate_no_ritz_options(config)
+    if config.inertia not in {"distributed", "lumped"}:
+        raise ConfigError("PCS inertia must be 'distributed' or 'lumped'")
+
+
+def _validate_ritz_common(config: ModelConfig) -> None:
+    if config.inertia != "distributed":
+        raise ConfigError("Ritz parameterization requires distributed inertia")
+    if config.ritz_x is None or config.ritz_y is None:
+        raise ConfigError("Ritz parameterization requires ritz.x and ritz.y")
+    _validate_ritz(config.ritz_x, "ritz.x")
+    _validate_ritz(config.ritz_y, "ritz.y")
+
+
+def _validate_euler_bernoulli_ritz(config: ModelConfig) -> None:
+    _validate_ritz_common(config)
+    if config.ritz_z is not None:
+        raise ConfigError("euler_bernoulli + ritz does not accept ritz.z")
+
+
+def _validate_extensible_kirchhoff_ritz(config: ModelConfig) -> None:
+    _validate_ritz_common(config)
+    if config.ritz_z is None:
+        raise ConfigError("extensible_kirchhoff + ritz requires ritz.z")
+    if abs(config.ritz_z[0]) > 1e-12:
+        raise ConfigError("ritz.z must satisfy psi(0)=0")
+    if abs(sum(config.ritz_z) - 1.0) > 1e-10:
+        raise ConfigError("ritz.z must be normalized so psi(1)=1")
+
+
+def _validate_cosserat_pcs(config: ModelConfig) -> None:
+    _validate_pcs_inertia(config)
+    if config.inertia == "distributed":
+        if config.integration.method != "gauss":
+            raise ConfigError(
+                "distributed cosserat + pcs inertia requires integration.method='gauss'"
+            )
+        if config.integration.order is None or config.integration.order < 2:
+            raise ConfigError(
+                "distributed cosserat + pcs inertia requires Gauss order at least 2"
+            )
+    elif config.integration.method != "analytic":
+        raise ConfigError("integration is not applicable to lumped cosserat + pcs inertia")
+
+
 _CACHE: dict[str, SymbolicPlant] = {}
 
 
-_MODEL_BUILDERS: dict[str, Callable[[ModelConfig], SymbolicPlant]] = {
-    "pcc": _derive_pcc,
-    "euler": _derive_euler,
-    "cosserat_pcs": _derive_cosserat_pcs,
+_MODELS: dict[tuple[str, str], RegisteredModel] = {
+    ("euler_bernoulli", "ritz"): RegisteredModel(
+        _derive_euler_bernoulli_ritz, _validate_euler_bernoulli_ritz
+    ),
+    ("euler_bernoulli", "pcs"): RegisteredModel(
+        _derive_euler_bernoulli_pcs, _validate_pcs_inertia
+    ),
+    ("extensible_kirchhoff", "ritz"): RegisteredModel(
+        _derive_extensible_kirchhoff_ritz, _validate_extensible_kirchhoff_ritz
+    ),
+    ("extensible_kirchhoff", "pcs"): RegisteredModel(
+        _derive_extensible_kirchhoff_pcs, _validate_pcs_inertia
+    ),
+    ("cosserat", "pcs"): RegisteredModel(
+        _derive_cosserat_pcs, _validate_cosserat_pcs
+    ),
 }
 
 
-def register_model(name: str, builder: Callable[[ModelConfig], SymbolicPlant]) -> None:
-    """Register a model builder that returns a SymPy-backed SymbolicPlant."""
-    if not name or name in _MODEL_BUILDERS:
-        raise ValueError(f"model family {name!r} is already registered or invalid")
-    _MODEL_BUILDERS[name] = builder
+def register_model(
+    rod: str,
+    parameterization: str,
+    builder: ModelBuilder,
+    *,
+    validator: ModelValidator | None = None,
+) -> None:
+    """Register one supported rod and spatial-parameterization combination."""
+    key = (rod, parameterization)
+    if not rod or not parameterization or key in _MODELS:
+        raise ValueError(f"model combination {key!r} is already registered or invalid")
+    _MODELS[key] = RegisteredModel(builder, validator)
 
 
 def derive(config: ModelConfig) -> SymbolicPlant:
+    combination = (config.rod, config.parameterization)
+    try:
+        registered = _MODELS[combination]
+    except KeyError as error:
+        raise ValueError(f"unregistered model combination: {combination!r}") from error
+    if registered.validator is not None:
+        registered.validator(config)
     key = json.dumps({
-        "family": config.family,
+        "rod": config.rod,
+        "parameterization": config.parameterization,
         "segments": config.segments,
         "inertia": config.inertia,
         "integration": [config.integration.method, config.integration.order],
         "parameters": config.parameters,
         "ritz_x": config.ritz_x,
         "ritz_y": config.ritz_y,
+        "ritz_z": config.ritz_z,
         "base": [config.base.mode, config.base.mount_xyz, config.base.mount_rpy],
     }, sort_keys=True)
     if key not in _CACHE:
-        try:
-            builder = _MODEL_BUILDERS[config.family]
-        except KeyError as error:
-            raise ValueError(f"unregistered model family: {config.family}") from error
-        _CACHE[key] = builder(config)
+        _CACHE[key] = registered.builder(config)
     # Actuation is deliberately not part of the expensive physical-model cache,
     # but callers must retain the actuation attached to their own configuration.
     return replace(_CACHE[key], config=config, _bias=None)

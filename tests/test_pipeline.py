@@ -15,7 +15,8 @@ from softarm.pipeline import BuildError, BuildOptions, build_bundle
 
 def _config() -> ModelConfig:
     return ModelConfig(
-        family="euler",
+        rod="euler_bernoulli",
+        parameterization="ritz",
         segments=1,
         integration=IntegrationConfig("analytic"),
         ritz_x=(0.0, 0.0, 1.5, -0.5),

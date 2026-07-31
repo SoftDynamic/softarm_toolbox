@@ -54,7 +54,8 @@ def test_sympy_differentiator_and_function_optimizer():
 
 def test_bias_uses_the_single_batch_derivative_formula():
     plant = derive(ModelConfig(
-        family="euler",
+        rod="euler_bernoulli",
+        parameterization="ritz",
         segments=1,
         integration=IntegrationConfig("analytic"),
         ritz_x=(0.0, 0.0, 1.5, -0.5),

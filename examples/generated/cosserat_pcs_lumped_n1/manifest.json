@@ -1,6 +1,7 @@
 {
   "model": {
-    "family": "cosserat_pcs",
+    "rod": "cosserat",
+    "parameterization": "pcs",
     "segments": 1,
     "base_mode": "fixed"
   },

@@ -33,28 +33,13 @@ def skew(vector: tuple[sp.Expr, sp.Expr, sp.Expr] | sp.Matrix) -> sp.Matrix:
     return sp.Matrix([[0, -z, y], [z, 0, -x], [-y, x, 0]])
 
 
-def pcc_transform(bx: sp.Expr, by: sp.Expr, length: sp.Expr, xi: sp.Expr = sp.S.One) -> sp.Matrix:
-    x = xi * bx
-    y = xi * by
-    z = x * x + y * y
-    a = SincSqrt(z)
-    b = CoscSqrt(z)
-    rotation = sp.Matrix([
-        [1 - x * x * b, -x * y * b, x * a],
-        [-x * y * b, 1 - y * y * b, y * a],
-        [-x * a, -y * a, 1 - z * b],
-    ])
-    position = sp.Matrix([length * xi * x * b, length * xi * y * b, length * xi * a])
-    return homogeneous(rotation, position)
-
-
-def cosserat_pcs_transform(
+def pcs_transform(
     kappa: tuple[sp.Expr, sp.Expr, sp.Expr] | sp.Matrix,
     nu: tuple[sp.Expr, sp.Expr, sp.Expr] | sp.Matrix,
     length: sp.Expr,
     xi: sp.Expr = sp.S.One,
 ) -> sp.Matrix:
-    """Exact constant-strain Cosserat transform on SE(3)."""
+    """Exact piecewise-constant-strain transform on SE(3)."""
     kappa_vector = sp.Matrix(kappa)
     nu_vector = sp.Matrix(nu)
     distance = length * xi
@@ -73,13 +58,15 @@ def polynomial(coefficients: tuple[float, ...], xi: sp.Expr) -> sp.Expr:
     return sp.Add(*(sp.Rational(str(value)) * xi**index for index, value in enumerate(coefficients)))
 
 
-def euler_ritz_transform(
+def ritz_transform(
     ax: sp.Expr,
     ay: sp.Expr,
+    az: sp.Expr,
     length: sp.Expr,
     xi: sp.Expr,
     psi_x: sp.Expr,
     psi_y: sp.Expr,
+    psi_z: sp.Expr,
     dpsi_x: sp.Expr,
     dpsi_y: sp.Expr,
 ) -> sp.Matrix:
@@ -91,7 +78,7 @@ def euler_ritz_transform(
         [0, 1, slope_y],
         [-slope_x, -slope_y, 1],
     ])
-    position = sp.Matrix([ax * psi_x, ay * psi_y, length * xi])
+    position = sp.Matrix([ax * psi_x, ay * psi_y, length * xi + az * psi_z])
     return homogeneous(rotation, position)
 
 

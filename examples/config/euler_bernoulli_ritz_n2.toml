@@ -1,0 +1,29 @@
+[model]
+rod = "euler_bernoulli"
+parameterization = "ritz"
+segments = 2
+
+[integration]
+method = "analytic"
+
+# Explicit normalized cantilever Ritz polynomial: psi(xi)=1.5*xi^2-0.5*xi^3.
+[ritz]
+x = [0.0, 0.0, 1.5, -0.5]
+y = [0.0, 0.0, 1.5, -0.5]
+
+[parameters]
+gravity = 9.81
+length = [0.45, 0.50]
+mass = [0.18, 0.20]
+Ixx = [0.0018, 0.0020]
+Iyy = [0.0018, 0.0020]
+Izz = [0.00010, 0.00011]
+EI_x = [1.1, 1.2]
+EI_y = [1.1, 1.2]
+d_ax = 0.05
+d_ay = 0.05
+tip_mass = 0.10
+tip_Ixx = 0.01
+tip_Iyy = 0.01
+tip_Izz = 0.01
+

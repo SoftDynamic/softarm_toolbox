@@ -19,12 +19,14 @@ def test_wolfram_end_to_end(monkeypatch, tmp_path):
     if not local.is_file():
         pytest.skip("no local Wolfram tool configuration")
     config = ModelConfig(
-        family="euler", segments=2, integration=IntegrationConfig("analytic"),
+        rod="euler_bernoulli", parameterization="ritz", segments=2,
+        integration=IntegrationConfig("analytic"),
         ritz_x=(0.0, 0.0, 1.5, -0.5), ritz_y=(0.0, 0.0, 1.5, -0.5),
     )
     x = sp.Symbol("x", real=True, nonnegative=True)
     plant = derive(ModelConfig(
-        family="pcc", segments=1, inertia="lumped",
+        rod="extensible_kirchhoff", parameterization="pcs", segments=1,
+        inertia="lumped",
         integration=IntegrationConfig(),
     ))
     with WolframKernel() as kernel:

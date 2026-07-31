@@ -55,13 +55,15 @@ class ConstraintConfig:
 
 @dataclass(frozen=True)
 class ModelConfig:
-    family: str
+    rod: str
+    parameterization: str
     segments: int
     inertia: str = "distributed"
     integration: IntegrationConfig = field(default_factory=IntegrationConfig)
     parameters: dict[str, Any] = field(default_factory=dict)
     ritz_x: tuple[float, ...] | None = None
     ritz_y: tuple[float, ...] | None = None
+    ritz_z: tuple[float, ...] | None = None
     base: BaseConfig = field(default_factory=BaseConfig)
     actuation: ActuationConfig | None = None
     constraint: ConstraintConfig | None = None
@@ -198,21 +200,16 @@ def load_config(path: str | Path) -> ModelConfig:
         raw = tomllib.load(stream)
 
     model = raw.get("model", {})
-    family = str(model.get("family", "")).lower()
-    if not family:
-        raise ConfigError("model.family is required")
+    rod = str(model.get("rod", "")).lower()
+    if not rod:
+        raise ConfigError("model.rod is required")
+    parameterization = str(model.get("parameterization", "")).lower()
+    if not parameterization:
+        raise ConfigError("model.parameterization is required")
     segments = int(model.get("segments", 0))
     if segments < 1:
         raise ConfigError("model.segments must be positive")
     inertia = str(model.get("inertia", "distributed")).lower()
-    if family == "pcc" and inertia not in {"distributed", "lumped"}:
-        raise ConfigError("PCC inertia must be 'distributed' or 'lumped'")
-    if family == "cosserat_pcs" and inertia not in {"distributed", "lumped"}:
-        raise ConfigError("Cosserat-PCS inertia must be 'distributed' or 'lumped'")
-    if family == "cosserat_pcs" and inertia == "lumped" and "integration" in raw:
-        raise ConfigError("integration is not applicable to lumped Cosserat-PCS inertia")
-    if family == "euler":
-        inertia = "distributed"
 
     integration_raw = raw.get("integration", {})
     method = str(integration_raw.get("method", "analytic")).lower()
@@ -225,36 +222,32 @@ def load_config(path: str | Path) -> ModelConfig:
         order = int(order)
     else:
         order = None
-    if family == "cosserat_pcs" and inertia == "distributed":
-        if method != "gauss":
-            raise ConfigError(
-                "distributed Cosserat-PCS inertia requires integration.method='gauss'"
-            )
-        if order is None or order < 2:
-            raise ConfigError(
-                "distributed Cosserat-PCS inertia requires Gauss order at least 2"
-            )
-
-    ritz_x = ritz_y = None
-    if family == "euler":
-        ritz = raw.get("ritz", {})
-        ritz_x = _coefficients(ritz.get("x"), "ritz.x")
-        ritz_y = _coefficients(ritz.get("y"), "ritz.y")
-        _validate_ritz(ritz_x, "ritz.x")
-        _validate_ritz(ritz_y, "ritz.y")
+    ritz_x = ritz_y = ritz_z = None
+    if "ritz" in raw:
+        ritz = raw["ritz"]
+        if not isinstance(ritz, dict):
+            raise ConfigError("ritz must be a TOML table")
+        if "x" in ritz:
+            ritz_x = _coefficients(ritz["x"], "ritz.x")
+        if "y" in ritz:
+            ritz_y = _coefficients(ritz["y"], "ritz.y")
+        if "z" in ritz:
+            ritz_z = _coefficients(ritz["z"], "ritz.z")
 
     parameters = dict(raw.get("parameters", {}))
     base = _load_base(raw.get("base"))
     actuation = _load_actuation(raw.get("actuation"), segments)
     constraint = _load_constraint(raw.get("constraint"))
     return ModelConfig(
-        family=family,
+        rod=rod,
+        parameterization=parameterization,
         segments=segments,
         inertia=inertia,
         integration=IntegrationConfig(method, order),
         parameters=parameters,
         ritz_x=ritz_x,
         ritz_y=ritz_y,
+        ritz_z=ritz_z,
         base=base,
         actuation=actuation,
         constraint=constraint,

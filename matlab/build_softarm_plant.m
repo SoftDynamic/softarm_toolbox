@@ -7,7 +7,8 @@ outputPath = fullfile(outputDirectory,"softarm_plant.slx");
 model = "softarm_plant";
 if bdIsLoaded(model), close_system(model, 0); end
 new_system(model);
-defaultBundle = fullfile("..","..","examples","generated","pcc_lumped_n2");
+defaultBundle = fullfile("..","..","examples","generated", ...
+    "extensible_kirchhoff_pcs_lumped_n2");
 modelWorkspace = get_param(model,"ModelWorkspace");
 assignin(modelWorkspace,"Bundle",char(defaultBundle));
 set_param(model,"ParameterArgumentNames","Bundle");

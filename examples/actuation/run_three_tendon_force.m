@@ -1,7 +1,7 @@
 root = fileparts(fileparts(fileparts(mfilename("fullpath"))));
 addpath(fullfile(root,"matlab"));
 plant = softarm.loadModel(fullfile(root,"examples","generated", ...
-    "pcc_three_tendon_extensible_n2"));
+    "extensible_kirchhoff_pcs_three_tendon_n2"));
 
 q = [0;0;0.45;0;0;0.50];
 dq = zeros(plant.nq,1);

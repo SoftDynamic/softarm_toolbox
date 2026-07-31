@@ -8,7 +8,7 @@ from softarm.derive import derive
 from softarm.special import LAMBDA_MODULES
 
 
-def _pcc_position(q, xi):
+def _constant_bend_stretch_position(q, xi):
     bx, by, length = q
     x = xi * bx
     y = xi * by
@@ -46,7 +46,8 @@ def _cosserat_position(q, xi, length=0.5):
 
 def test_distributed_mass_matches_independent_numerical_quadrature():
     config = ModelConfig(
-        family="pcc", segments=1, inertia="distributed", integration=IntegrationConfig("gauss", 4),
+        rod="extensible_kirchhoff", parameterization="pcs", segments=1,
+        inertia="distributed", integration=IntegrationConfig("gauss", 4),
         parameters={
             "mass": 1.0, "Ixx": 0.0, "Iyy": 0.0, "Izz": 0.0,
             "tip_mass": 0.0, "tip_Ixx": 0.0, "tip_Iyy": 0.0, "tip_Izz": 0.0,
@@ -65,13 +66,16 @@ def test_distributed_mass_matches_independent_numerical_quadrature():
         for column in range(3):
             delta = np.zeros(3)
             delta[column] = step
-            jacobian[:, column] = (_pcc_position(q+delta, node)-_pcc_position(q-delta, node))/(2*step)
+            jacobian[:, column] = (_constant_bend_stretch_position(q+delta, node)-_constant_bend_stretch_position(q-delta, node))/(2*step)
         independent += weight * jacobian.T @ jacobian
     np.testing.assert_allclose(symbolic, independent, rtol=2e-5, atol=2e-7)
 
 
 def test_coriolis_term_satisfies_energy_identity():
-    config = ModelConfig(family="pcc", segments=1, inertia="lumped", integration=IntegrationConfig())
+    config = ModelConfig(
+        rod="extensible_kirchhoff", parameterization="pcs", segments=1,
+        inertia="lumped", integration=IntegrationConfig(),
+    )
     plant = derive(config)
     q = np.array([0.09, -0.04, 0.51])
     dq = np.array([0.03, -0.02, 0.01])
@@ -88,7 +92,7 @@ def test_coriolis_term_satisfies_energy_identity():
 
 def test_cosserat_distributed_mass_matches_independent_quadrature():
     config = ModelConfig(
-        family="cosserat_pcs", segments=1, inertia="distributed",
+        rod="cosserat", parameterization="pcs", segments=1, inertia="distributed",
         integration=IntegrationConfig("gauss", 4),
         parameters={
             "length": 0.5, "mass": 1.0,

@@ -1,13 +1,40 @@
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
+import pytest
 import sympy as sp
 
 from softarm.config import BaseConfig, IntegrationConfig, ModelConfig, load_config
-from softarm.derive import derive
+from softarm.derive import derive, register_model
 from softarm.special import LAMBDA_MODULES
 
 ROOT = Path(__file__).parents[1]
+
+
+def test_external_combination_registration_runs_its_validator():
+    events: list[str] = []
+
+    def validator(config):
+        events.append(f"validate:{config.rod}:{config.parameterization}")
+
+    def builder(config):
+        return derive(replace(
+            config,
+            rod="euler_bernoulli",
+            parameterization="pcs",
+            inertia="lumped",
+        ))
+
+    register_model("custom_rod", "custom_parameterization", builder, validator=validator)
+    config = ModelConfig(
+        rod="custom_rod", parameterization="custom_parameterization", segments=1,
+        inertia="lumped",
+    )
+    assert derive(config).config == config
+    assert events == ["validate:custom_rod:custom_parameterization"]
+    with pytest.raises(ValueError, match="already registered"):
+        register_model("custom_rod", "custom_parameterization", builder)
 
 
 def _numeric(matrix, plant, q):
@@ -16,8 +43,8 @@ def _numeric(matrix, plant, q):
     return np.asarray(fn(np.asarray(q), p), dtype=float)
 
 
-def test_lumped_pcc_mass_is_symmetric_and_finite():
-    plant = derive(load_config(ROOT / "examples/config/pcc_lumped_n2.toml"))
+def test_lumped_extensible_kirchhoff_pcs_mass_is_symmetric_and_finite():
+    plant = derive(load_config(ROOT / "examples/config/extensible_kirchhoff_pcs_lumped_n2.toml"))
     q = [0.08, -0.04, 0.46, -0.03, 0.06, 0.51]
     mass = _numeric(plant.mass, plant, q)
     np.testing.assert_allclose(mass, mass.T, rtol=1e-11, atol=1e-12)
@@ -26,7 +53,7 @@ def test_lumped_pcc_mass_is_symmetric_and_finite():
 
 
 def test_euler_shapes_and_ritz_stiffness():
-    plant = derive(load_config(ROOT / "examples/config/euler_ritz_n2.toml"))
+    plant = derive(load_config(ROOT / "examples/config/euler_bernoulli_ritz_n2.toml"))
     assert plant.mass.shape == (4, 4)
     assert plant.bias.shape == (4, 1)
     assert plant.kinematics.shape == (4, 8)
@@ -35,12 +62,32 @@ def test_euler_shapes_and_ritz_stiffness():
     assert sp.integrate((3 - 3 * sp.Symbol("xi")) ** 2, (sp.Symbol("xi"), 0, 1)) == 3
 
 
+def test_euler_bernoulli_pcs_has_only_fixed_length_bending_coordinates():
+    plant = derive(load_config(ROOT / "examples/config/euler_bernoulli_pcs_n2.toml"))
+    assert plant.arm_coordinate_names == ["bx1", "by1", "bx2", "by2"]
+    assert plant.mass.shape == (4, 4)
+    defaults = {item.symbol: item.default for item in plant.parameters}
+    straight = plant.end_transform.subs(defaults).subs({item: 0 for item in plant.q})
+    assert np.isclose(float(straight[2, 3]), 0.95)
+
+
+def test_extensible_kirchhoff_ritz_has_three_displacement_coordinates():
+    plant = derive(load_config(ROOT / "examples/config/extensible_kirchhoff_ritz_n2.toml"))
+    assert plant.arm_coordinate_names == ["ax1", "ay1", "az1", "ax2", "ay2", "az2"]
+    assert plant.mass.shape == (6, 6)
+    axial_stiffness = sp.diff(plant.potential, plant.arm_q[2], 2)
+    defaults = {item.symbol: item.default for item in plant.parameters}
+    assert np.isclose(float(axial_stiffness.subs(defaults)), 100.0)
+
+
 def test_floating_base_has_coupled_coordinates_and_wrench_map():
     fixed = derive(ModelConfig(
-        family="pcc", segments=1, inertia="lumped", integration=IntegrationConfig()
+        rod="extensible_kirchhoff", parameterization="pcs", segments=1,
+        inertia="lumped", integration=IntegrationConfig()
     ))
     floating = derive(ModelConfig(
-        family="pcc", segments=1, inertia="lumped", integration=IntegrationConfig(),
+        rod="extensible_kirchhoff", parameterization="pcs", segments=1,
+        inertia="lumped", integration=IntegrationConfig(),
         base=BaseConfig("floating_rpy"),
     ))
     assert floating.base_coordinate_names == [
@@ -75,7 +122,7 @@ def test_floating_base_has_coupled_coordinates_and_wrench_map():
 
 def test_cosserat_pcs_lumped_shapes_energy_and_nominal_mass():
     plant = derive(ModelConfig(
-        family="cosserat_pcs", segments=1, inertia="lumped",
+        rod="cosserat", parameterization="pcs", segments=1, inertia="lumped",
         integration=IntegrationConfig(),
     ))
     assert plant.arm_coordinate_names == ["kx1", "ky1", "kz1", "vx1", "vy1", "vz1"]

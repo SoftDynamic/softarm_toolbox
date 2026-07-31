@@ -10,7 +10,7 @@ from sympy.printing.latex import LatexPrinter
 from ..actuation import ActuationModel
 from ..constraints import ConstraintModel
 from ..derive import RuntimeParameter, SymbolicPlant
-from ..geometry import euler_ritz_transform, pcc_transform, polynomial, transform_rpy
+from ..geometry import polynomial, ritz_transform, transform_rpy
 from .optimization import FunctionOptimizer
 
 
@@ -213,7 +213,8 @@ def _model_summary(plant: SymbolicPlant) -> str:
         r"This document is generated from the same SymPy model used for numerical code generation.",
         r"\begin{description}",
         rf"\item[Source configuration] \texttt{{{_escape_text(source)}}}",
-        rf"\item[Arm family] \texttt{{{_escape_text(plant.config.family)}}}",
+        rf"\item[Rod theory] \texttt{{{_escape_text(plant.config.rod)}}}",
+        rf"\item[Spatial parameterization] \texttt{{{_escape_text(plant.config.parameterization)}}}",
         rf"\item[Number of sections] {plant.config.segments}",
         rf"\item[Base mode] \texttt{{{_escape_text(plant.config.base.mode)}}}",
         rf"\item[Arm inertia model] \texttt{{{_escape_text(plant.config.inertia)}}}",
@@ -259,52 +260,39 @@ def _kinematics(plant: SymbolicPlant, printer: SoftArmLatexPrinter) -> str:
     )
     lines.append(_equation(r"H_{BA}=" + _math(mount, printer), "eq:mount-transform"))
     xi = sp.Symbol("xi", real=True, nonnegative=True)
+    combination = (plant.config.rod, plant.config.parameterization)
     bx, by, length = sp.symbols("bx by L", real=True)
-    if plant.config.family == "pcc":
+    if plant.config.parameterization == "pcs":
         lines.extend([
-            r"\subsection{PCC Section}",
+            r"\subsection{Piecewise-Constant-Strain Parameterization}",
             _equation(
                 r"\Sfun(z)=\begin{cases}\dfrac{\sin\sqrt z}{\sqrt z},&z\ne0\\1,&z=0\end{cases},\qquad "
                 r"\Cfun(z)=\begin{cases}\dfrac{1-\cos\sqrt z}{z},&z\ne0\\\dfrac12,&z=0\end{cases}"
             ),
-            r"For one section, $b_x$ and $b_y$ are Cartesian bending-angle components and $L$ is its current length.",
-            _equation(r"H_i(\xi)=" + _math(pcc_transform(bx, by, length, xi), printer), "eq:local-transform"),
-        ])
-    elif plant.config.family == "euler":
-        ax, ay = sp.symbols("ax ay", real=True)
-        psi_x = polynomial(plant.config.ritz_x or (), xi)
-        psi_y = polynomial(plant.config.ritz_y or (), xi)
-        lines.extend([
-            r"\subsection{Euler--Bernoulli Ritz Section}",
-            _equation(r"\psi_x(\xi)=" + _math(psi_x, printer) + r",\qquad\psi_y(\xi)=" + _math(psi_y, printer)),
-            _equation(
-                r"r_i(\xi)=\begin{bmatrix}a_x\psi_x(\xi)&a_y\psi_y(\xi)&L\xi\end{bmatrix}^T"
-            ),
-            _equation(
-                r"\alpha_x(\xi)=\frac{a_x}{L}\psi_x'(\xi),\qquad "
-                r"\alpha_y(\xi)=\frac{a_y}{L}\psi_y'(\xi)"
-            ),
-            _equation(
-                r"H_i(\xi)=" + _math(euler_ritz_transform(
-                    ax, ay, length, xi, psi_x, psi_y,
-                    sp.diff(psi_x, xi), sp.diff(psi_y, xi),
-                ), printer),
-                "eq:local-transform",
-            ),
-            r"Products above first order in the arm Ritz coordinates are discarded; the floating-base attitude, when present, remains exact.",
-        ])
-    elif plant.config.family == "cosserat_pcs":
-        lines.extend([
-            r"\subsection{Cosserat Piecewise-Constant-Strain Section}",
             _equation(
                 r"\Tfun(z)=\begin{cases}\dfrac{1-\Sfun(z)}{z},&z\ne0\\"
                 r"\dfrac16,&z=0\end{cases}"
             ),
-            r"The generalized coordinates are increments from the configured stress-free angular and linear strains.",
-            _equation(
-                r"\kappa_i=\kappa_{0,i}+\delta\kappa_i,\qquad "
-                r"\nu_i=\nu_{0,i}+\delta\nu_i"
-            ),
+        ])
+        if combination == ("euler_bernoulli", "pcs"):
+            lines.append(_equation(
+                r"\kappa_i=[-b_{y,i}/L_i,\ b_{x,i}/L_i,\ 0]^T,\qquad"
+                r"\nu_i=[0,0,1]^T"
+            ))
+        elif combination == ("extensible_kirchhoff", "pcs"):
+            lines.append(_equation(
+                r"\kappa_i=[-b_{y,i}/L_{0,i},\ b_{x,i}/L_{0,i},\ 0]^T,\qquad"
+                r"\nu_i=[0,0,l_i/L_{0,i}]^T"
+            ))
+        else:
+            lines.extend([
+                r"The generalized coordinates are increments from the configured stress-free angular and linear strains.",
+                _equation(
+                    r"\kappa_i=\kappa_{0,i}+\delta\kappa_i,\qquad "
+                    r"\nu_i=\nu_{0,i}+\delta\nu_i"
+                ),
+            ])
+        lines.extend([
             _equation(
                 r"\Omega_i(\xi)=L_i\xi\widehat{\kappa_i},\qquad "
                 r"z_i(\xi)=(L_i\xi)^2\kappa_i^T\kappa_i"
@@ -318,8 +306,40 @@ def _kinematics(plant: SymbolicPlant, printer: SoftArmLatexPrinter) -> str:
                 "eq:local-transform",
             ),
         ])
+    elif plant.config.parameterization == "ritz":
+        ax, ay, az = sp.symbols("ax ay az", real=True)
+        psi_x = polynomial(plant.config.ritz_x or (), xi)
+        psi_y = polynomial(plant.config.ritz_y or (), xi)
+        psi_z = polynomial(plant.config.ritz_z or (), xi)
+        selected_az = az if plant.config.rod == "extensible_kirchhoff" else sp.S.Zero
+        lines.extend([
+            r"\subsection{Ritz Parameterization}",
+            _equation(
+                r"\psi_x(\xi)=" + _math(psi_x, printer)
+                + r",\qquad\psi_y(\xi)=" + _math(psi_y, printer)
+                + (r",\qquad\psi_z(\xi)=" + _math(psi_z, printer) if selected_az else "")
+            ),
+            _equation(
+                r"r_i(\xi)=\begin{bmatrix}a_x\psi_x(\xi)&a_y\psi_y(\xi)&L\xi+a_z\psi_z(\xi)\end{bmatrix}^T"
+            ),
+            _equation(
+                r"\alpha_x(\xi)=\frac{a_x}{L}\psi_x'(\xi),\qquad "
+                r"\alpha_y(\xi)=\frac{a_y}{L}\psi_y'(\xi)"
+            ),
+            _equation(
+                r"H_i(\xi)=" + _math(ritz_transform(
+                    ax, ay, selected_az, length, xi, psi_x, psi_y, psi_z,
+                    sp.diff(psi_x, xi), sp.diff(psi_y, xi),
+                ), printer),
+                "eq:local-transform",
+            ),
+            r"Products above first order in the arm Ritz coordinates are discarded; the floating-base attitude, when present, remains exact.",
+        ])
     else:
-        lines.append(r"This externally registered model family is documented from its public symbolic outputs.")
+        lines.append(
+            r"This externally registered rod--parameterization combination is documented "
+            r"from its public symbolic outputs."
+        )
     lines.extend([
         _equation(r"H_{Wi}(\xi)=H_{WB}H_{BA}\left(\prod_{k=1}^{i-1}H_k(1)\right)H_i(\xi)"),
         _equation(
@@ -344,7 +364,7 @@ def _energy_and_dynamics(plant: SymbolicPlant, printer: SoftArmLatexPrinter) -> 
                if plant.config.integration.method == "analytic"
                else rf"The configured {plant.config.integration.order}-point Gauss--Legendre rule is used.")
         )
-        if plant.config.family == "euler":
+        if plant.config.parameterization == "ritz":
             inertia_text += r" This is the inertia assembly for the configured Ritz coordinates."
     section_gravity = (
         r"\sum_{i=1}^{N}m_i z_i(1/2)"
@@ -380,18 +400,31 @@ def _energy_and_dynamics(plant: SymbolicPlant, printer: SoftArmLatexPrinter) -> 
         _equation(r"T=\frac12\dot{\boldsymbol q}^{T}M(\boldsymbol q)\dot{\boldsymbol q}"),
         _equation(r"V=V_g+V_{\mathrm{elastic}},\qquad V_g=-g\!\left(" + gravity_terms + r"\right)"),
     ])
-    if plant.config.family == "pcc":
+    combination = (plant.config.rod, plant.config.parameterization)
+    if combination == ("extensible_kirchhoff", "pcs"):
         lines.append(_equation(
             r"V_{\mathrm{elastic}}=\frac12\sum_{i=1}^{N}\left("
             r"k_{b_x,i}b_{x,i}^{2}+k_{b_y,i}b_{y,i}^{2}+k_{L,i}(L_i-L_{0,i})^2\right)"
         ))
-    elif plant.config.family == "euler":
+    elif combination == ("euler_bernoulli", "pcs"):
+        lines.append(_equation(
+            r"V_{\mathrm{elastic}}=\frac12\sum_{i=1}^{N}\left("
+            r"\frac{EI_{y,i}}{L_i}b_{x,i}^{2}+\frac{EI_{x,i}}{L_i}b_{y,i}^{2}\right)"
+        ))
+    elif combination == ("euler_bernoulli", "ritz"):
         lines.append(_equation(
             r"V_{\mathrm{elastic}}=\frac12\sum_{i=1}^{N}\left["
             r"\frac{EI_{y,i}a_{x,i}^{2}}{L_i^3}\int_0^1(\psi_x'')^2d\xi+"
             r"\frac{EI_{x,i}a_{y,i}^{2}}{L_i^3}\int_0^1(\psi_y'')^2d\xi\right]"
         ))
-    elif plant.config.family == "cosserat_pcs":
+    elif combination == ("extensible_kirchhoff", "ritz"):
+        lines.append(_equation(
+            r"V_{\mathrm{elastic}}=\frac12\sum_{i=1}^{N}\left["
+            r"\frac{EI_{y,i}a_{x,i}^{2}}{L_i^3}\int_0^1(\psi_x'')^2d\xi+"
+            r"\frac{EI_{x,i}a_{y,i}^{2}}{L_i^3}\int_0^1(\psi_y'')^2d\xi+"
+            r"\frac{EA_i a_{z,i}^{2}}{L_i}\int_0^1(\psi_z')^2d\xi\right]"
+        ))
+    elif combination == ("cosserat", "pcs"):
         lines.append(_equation(
             r"V_{\mathrm{elastic}}=\frac12\sum_{i=1}^{N}L_i\left("
             r"EI_{x,i}\delta\kappa_{x,i}^2+EI_{y,i}\delta\kappa_{y,i}^2+"
@@ -593,7 +626,10 @@ def generate_latex_document(
     target = Path(output).resolve()
     target.mkdir(parents=True, exist_ok=True)
     printer = SoftArmLatexPrinter({"mat_delim": None, "mat_str": "bmatrix"})
-    title = f"SoftArm {plant.config.family.upper()} Model ({plant.config.segments} Section"
+    title = (
+        f"SoftArm {plant.config.rod.upper()} + "
+        f"{plant.config.parameterization.upper()} Model ({plant.config.segments} Section"
+    )
     title += "s" if plant.config.segments != 1 else ""
     title += ")"
     sections = [

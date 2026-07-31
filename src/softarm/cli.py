@@ -59,7 +59,10 @@ def main(argv: list[str] | None = None) -> int:
             suffix = "" if actuation is None else f" and {actuation.count} actuator channel(s)"
             if constraint is not None:
                 suffix += f" and {constraint.count} constraint channel(s)"
-            print(f"valid {config.family} configuration with {config.segments} segment(s){suffix}")
+            print(
+                f"valid {config.rod} + {config.parameterization} configuration "
+                f"with {config.segments} segment(s){suffix}"
+            )
             return 0
         if args.command == "inspect":
             manifest = Path(args.bundle, "manifest.json")

@@ -175,7 +175,8 @@ def generate_matlab_bundle(
     }
     manifest = {
         "model": {
-            "family": plant.config.family,
+            "rod": plant.config.rod,
+            "parameterization": plant.config.parameterization,
             "segments": plant.config.segments,
             "base_mode": plant.config.base.mode,
         },
