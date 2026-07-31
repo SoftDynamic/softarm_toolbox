@@ -450,7 +450,7 @@ ddq = plant.forwardDynamics(q,dq,zeros(plant.narm,1),zeros(6,1),zeros(6,1),p);
 [A,Barm,Bvehicle,Btip] = softarm.linearize(plant,[q;dq],zeros(plant.narm,1),zeros(6,1),zeros(6,1),p);
 ```
 
-`softarm_plant.slx` 是无约束底层 Plant，输入为 `tau_arm`、`vehicle_wrench` 和 `tip_wrench`。`softarm_constrained_plant.slx` 增加约束加速度输入，并输出反力、可行性和 KKT 条件诊断。两个模型都带 `Bundle` System Mask，切换 bundle 会自动更新基座、软臂、执行器、约束和参数维数。
+`softarm_plant.slx` 是无约束底层 Plant，输入为 `tau_arm`、`vehicle_wrench` 和 `tip_wrench`。`softarm_constrained_plant.slx` 增加约束加速度输入，并输出反力、可行性和 KKT 条件诊断。两个模型都带 `Bundle` System Mask，切换 bundle 会自动更新基座、软臂、执行器、约束和参数维数。两者末尾的 `backbone_poses` 输出按列堆叠每段末端的世界系 `4×4` 齐次变换，因此维数为 `16N×1`；已有输出端口编号保持不变。
 
 模型可由 `matlab/build_softarm_plant.m` 完整重建，不需要手工编辑 SLX。
 
@@ -465,6 +465,38 @@ ddq = plant.forwardDynamics(q,dq,zeros(plant.narm,1),zeros(6,1),zeros(6,1),p);
 - `softarm_flying_contact_demo.slx`：浮动基 PCC 与平面单点摩擦约束示例；从已贴合状态开始。
 
 两个 Demo 的 `State scope` 显示 `q/dq`。反馈上的 Memory 块用于跨 Model Reference 打断 Simulink 的保守代数环判断。构建脚本为 `matlab/build_softarm_actuator_models.m`。
+
+### 关键节点姿态记录与离线回放
+
+三个 Demo（tendon force、tendon acceleration 和 flying contact）都在顶层直接用标准 `To Workspace` 记录 Plant 的 `q`，日志变量为基工作区中的 timeseries `softarm_q_log`。块的 `Sample time` 为 `-1`，继承输入信号采样时间，不会为了可视化日志强迫变步长求解器命中额外时间点。仿真期间不计算关键节点位姿、创建窗口或执行图形回调；Demo 也关闭了 Simulation Pacing。
+
+仿真完成后在 MATLAB 命令行运行：
+
+```matlab
+softarm_pose_playback
+```
+
+播放器根据工作区中的 `softarm_bundle` 离线调用运动学函数重建各帧位姿，然后显示世界原点、backbone、每段末端节点和 RGB 位姿轴。界面提供可拖动的时间进度条、播放/暂停和 `0.1×` 到 `2×` 播放速度；鼠标可旋转视角，工具栏可缩放和平移，NED `+z` 在窗口中朝下。也可以显式传入日志：
+
+```matlab
+softarm_pose_playback(softarm_q_log)
+```
+
+若日志来自另一个 bundle，可显式指定：
+
+```matlab
+softarm_pose_playback(softarm_q_log,Bundle="examples/generated/euler_ritz_n2")
+```
+
+播放器还接受包含 `softarm_q_log` 的 `Simulink.SimulationOutput`、structure-with-time、timetable 或第一列为时间的数值矩阵；旧的 `16N` 位姿日志仍可直接回放。它不需要 Simulink 3D Animation；运动学重建和绘图都发生在仿真结束之后。
+
+重新生成相关 SLX 时按以下顺序执行：
+
+```matlab
+build_softarm_plant
+build_softarm_constraint_models
+build_softarm_actuator_models
+```
 
 切换模型时，双击 Demo 中的 `Plant` 块，在 Mask 的 `Bundle directory` 中填写生成包路径并点击 Apply，例如：
 

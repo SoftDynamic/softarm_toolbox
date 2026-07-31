@@ -42,6 +42,14 @@ function addOut(model, name, position)
 add_block("simulink/Sinks/Out1",model+"/"+name,"Position",position);
 end
 
+function addQLog(model,source,position)
+add_block("simulink/Sinks/To Workspace",model+"/q log", ...
+    "Position",position,"VariableName","softarm_q_log", ...
+    "SaveFormat","Timeseries","SampleTime","-1", ...
+    "Decimation","1","MaxDataPoints","inf");
+add_line(model,source,"q log/1","autorouting","on");
+end
+
 function buildForceActuator(outputPath)
 model = "softarm_actuator_force_block";
 prepare(model,actuatorInit(false),"1");
@@ -107,6 +115,7 @@ end
 function buildForceDemo(outputPath)
 model = "softarm_tendon_force_demo";
 prepare(model,demoInit("force"),"0.5");
+set_param(model,"EnablePacing","off","ReturnWorkspaceOutputs","off");
 add_block("simulink/Sources/Constant",model+"/Tension command", ...
     "Position",[30 65 120 95],"Value","softarm_u0");
 add_block("simulink/Sources/Constant",model+"/Vehicle wrench", ...
@@ -125,6 +134,7 @@ addOut(model,"mass_rcond",[760 190 790 210]);
 addOut(model,"tension_feasible",[410 105 440 125]);
 add_block("simulink/Sinks/Scope",model+"/State scope", ...
     "Position",[850 70 885 130],"NumInputPorts","2");
+addQLog(model,"Plant/1",[850 175 950 205]);
 add_line(model,"Tension command/1","Actuator/2");
 add_line(model,"Actuator/1","Plant/1");
 add_line(model,"Actuator/2","tension_feasible/1");
@@ -145,6 +155,7 @@ end
 function buildAccelerationDemo(outputPath)
 model = "softarm_tendon_acceleration_demo";
 prepare(model,demoInit("strict"),"0.5");
+set_param(model,"ReturnWorkspaceOutputs","off");
 add_block("simulink/Sources/Constant",model+"/Tendon acceleration", ...
     "Position",[20 60 135 90],"Value","zeros(softarm_nu,1)");
 add_block("simulink/Sources/Constant",model+"/Additional tau", ...
@@ -169,6 +180,7 @@ addOut(model,"tension_feasible",[455 125 485 145]);
 addOut(model,"constraint_rcond",[455 160 485 180]);
 add_block("simulink/Sinks/Scope",model+"/State scope", ...
     "Position",[855 60 890 120],"NumInputPorts","2");
+addQLog(model,"Plant/1",[855 145 955 175]);
 add_line(model,"Plant/1","q feedback memory/1","autorouting","on");
 add_line(model,"q feedback memory/1","Acceleration actuator/1","autorouting","on");
 add_line(model,"Plant/2","dq feedback memory/1","autorouting","on");

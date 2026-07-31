@@ -31,9 +31,9 @@ add_block("simulink/User-Defined Functions/MATLAB Function", model+"/State RHS",
 chart = find(sfroot, "-isa", "Stateflow.EMChart", "Path", model+"/State RHS");
 chart.Script = sprintf("function dx = fcn(x,tauArm,wVehicle,wTip,p)\n%%#codegen\ndx = softarm_state_rhs(x,tauArm,wVehicle,wTip,p);\nend\n");
 
-add_block("simulink/User-Defined Functions/MATLAB Function", model+"/Tip pose", "Position", [540 170 650 230]);
+add_block("simulink/User-Defined Functions/MATLAB Function", model+"/Tip pose", "Position", [540 165 650 235]);
 chart = find(sfroot, "-isa", "Stateflow.EMChart", "Path", model+"/Tip pose");
-chart.Script = sprintf("function pose = fcn(q,p)\n%%#codegen\nH=softarm_kinematics(q,p); pose=reshape(H(:,:,end),16,1);\nend\n");
+chart.Script = sprintf("function [pose,backbonePoses] = fcn(q,p)\n%%#codegen\nH=softarm_kinematics(q,p); pose=reshape(H(:,:,end),16,1); backbonePoses=H(:);\nend\n");
 
 add_block("simulink/User-Defined Functions/MATLAB Function", model+"/Diagnostics", "Position", [540 255 650 315]);
 chart = find(sfroot, "-isa", "Stateflow.EMChart", "Path", model+"/Diagnostics");
@@ -43,6 +43,7 @@ add_block("simulink/Sinks/Out1", model+"/q_out", "Position", [720 55 750 75]);
 add_block("simulink/Sinks/Out1", model+"/dq_out", "Position", [720 110 750 130]);
 add_block("simulink/Sinks/Out1", model+"/tip_pose", "Position", [720 190 750 210]);
 add_block("simulink/Sinks/Out1", model+"/diagnostic", "Position", [720 275 750 295]);
+add_block("simulink/Sinks/Out1", model+"/backbone_poses", "Position", [720 230 750 250]);
 
 add_line(model, "state/1", "State split/1");
 add_line(model, "state/1", "State RHS/1"); add_line(model, "tau_arm/1", "State RHS/2");
@@ -54,6 +55,7 @@ add_line(model, "State split/1", "Tip pose/1"); add_line(model, "parameters/1", 
 add_line(model, "Tip pose/1", "tip_pose/1");
 add_line(model, "State split/1", "Diagnostics/1"); add_line(model, "parameters/1", "Diagnostics/2");
 add_line(model, "Diagnostics/1", "diagnostic/1");
+add_line(model, "Tip pose/2", "backbone_poses/1");
 
 save_system(model, outputPath);
 close_system(model, 0);

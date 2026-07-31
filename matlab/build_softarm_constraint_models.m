@@ -25,6 +25,14 @@ function addOut(model,name,position)
 add_block("simulink/Sinks/Out1",model+"/"+name,"Position",position);
 end
 
+function addQLog(model,source,position)
+add_block("simulink/Sinks/To Workspace",model+"/q log", ...
+    "Position",position,"VariableName","softarm_q_log", ...
+    "SaveFormat","Timeseries","SampleTime","-1", ...
+    "Decimation","1","MaxDataPoints","inf");
+add_line(model,source,"q log/1","autorouting","on");
+end
+
 function buildConstrainedPlant(outputPath)
 model = "softarm_constrained_plant";
 prepare(model,"5");
@@ -61,7 +69,7 @@ chart.Script = sprintf( ...
 add_block("simulink/User-Defined Functions/MATLAB Function",model+"/Tip pose", ...
     "Position",[535 155 645 215]);
 chart = find(sfroot,"-isa","Stateflow.EMChart","Path",model+"/Tip pose");
-chart.Script = sprintf("function pose = fcn(q,p)\n%%#codegen\nH=softarm_kinematics(q,p); pose=reshape(H(:,:,end),16,1);\nend\n");
+chart.Script = sprintf("function [pose,backbonePoses] = fcn(q,p)\n%%#codegen\nH=softarm_kinematics(q,p); pose=reshape(H(:,:,end),16,1); backbonePoses=H(:);\nend\n");
 
 addOut(model,"q_out",[720 35 750 55]);
 addOut(model,"dq_out",[720 80 750 100]);
@@ -69,6 +77,7 @@ addOut(model,"tip_pose",[720 165 750 185]);
 addOut(model,"reaction",[370 165 400 185]);
 addOut(model,"is_feasible",[370 210 400 230]);
 addOut(model,"constraint_rcond",[370 255 400 275]);
+addOut(model,"backbone_poses",[720 210 750 230]);
 
 add_line(model,"state/1","State split/1");
 add_line(model,"state/1","Constrained RHS/1");
@@ -86,6 +95,7 @@ add_line(model,"State split/2","dq_out/1");
 add_line(model,"State split/1","Tip pose/1");
 add_line(model,"parameters/1","Tip pose/2");
 add_line(model,"Tip pose/1","tip_pose/1");
+add_line(model,"Tip pose/2","backbone_poses/1");
 save_system(model,outputPath);
 close_system(model,0);
 end
@@ -93,6 +103,7 @@ end
 function buildContactDemo(outputPath)
 model = "softarm_flying_contact_demo";
 prepare(model,"1");
+set_param(model,"ReturnWorkspaceOutputs","off");
 set_param(model,"InitFcn", ...
     "softarm_root=fileparts(get_param(bdroot,'FileName'));addpath(fullfile(softarm_root,'matlab'));softarm.initModel(fullfile(softarm_root,'examples','generated','pcc_flying_plane_contact_n1'));");
 add_block("simulink/Sources/Constant",model+"/Arm generalized force", ...
@@ -112,6 +123,7 @@ for index = 1:numel(names)
     addOut(model,names(index),[525 25+42*index 555 45+42*index]);
     add_line(model,"Constrained Plant/"+index,names(index)+"/1");
 end
+addQLog(model,"Constrained Plant/1",[620 70 720 100]);
 add_line(model,"Arm generalized force/1","Constrained Plant/1");
 add_line(model,"Vehicle wrench/1","Constrained Plant/2");
 add_line(model,"Tip wrench/1","Constrained Plant/3");

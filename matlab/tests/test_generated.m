@@ -45,6 +45,50 @@ verifySize(testCase,Btip,[2*plant.nq,6]);
 verifyTrue(testCase,all(isfinite([A(:);Barm(:);Bvehicle(:);Btip(:)])));
 end
 
+function testPoseStackToAero(testCase)
+angles = [0 0 0; 0.25 -0.35 0.45; -0.4 pi/2 0.2];
+translations = [0 0 0; 1 -2 3; -0.2 0.3 0.4];
+transforms = repmat(eye(4),1,1,size(angles,1));
+for node = 1:size(angles,1)
+    transforms(1:3,1:3,node) = rotationZYX(angles(node,:));
+    transforms(1:3,4,node) = translations(node,:).';
+end
+[actualTranslations,actualAngles] = softarm.poseStackToAero(transforms(:));
+verifyEqual(testCase,actualTranslations,translations,"AbsTol",1e-12);
+verifyTrue(testCase,all(isfinite(actualAngles(:))));
+for node = 1:size(angles,1)
+    verifyEqual(testCase,rotationZYX(actualAngles(node,:)), ...
+        transforms(1:3,1:3,node),"AbsTol",1e-10);
+end
+verifyError(testCase,@() softarm.poseStackToAero(zeros(15,1)), ...
+    "softarm:InvalidBackbonePoses");
+end
+
+function testGeneratedPoseStacks(testCase)
+root = testCase.TestData.root;
+names = ["pcc_three_tendon_extensible_n2","euler_ritz_n2"];
+for name = names
+    plant = softarm.loadModel(fullfile(root,"examples","generated",name));
+    q = zeros(plant.nq,1);
+    armCoordinates = cellstr(plant.manifest.coordinates.arm);
+    for armIndex = 1:plant.narm
+        token = regexp(armCoordinates{armIndex},'^l(\d+)$','tokens','once');
+        if ~isempty(token)
+            parameterName = "s"+token{1}+"_rest_length";
+            parameterIndex = find(strcmp({plant.manifest.parameters.name},parameterName),1);
+            q(plant.nbase+armIndex) = plant.parameters(parameterIndex);
+        end
+    end
+    transforms = plant.kinematics(q,plant.parameters);
+    [translation,rpy] = softarm.poseStackToAero(transforms(:));
+    verifySize(testCase,translation,[plant.manifest.model.segments 3]);
+    verifySize(testCase,rpy,[plant.manifest.model.segments 3]);
+    verifyEqual(testCase,translation,permute(transforms(1:3,4,:),[3 1 2]), ...
+        "AbsTol",1e-12);
+    verifyTrue(testCase,all(isfinite(rpy(:))));
+end
+end
+
 function testThreeTendonForceAndAxialMode(testCase)
 root = testCase.TestData.root;
 plant = softarm.loadModel(fullfile(root,"examples","generated", ...
@@ -118,32 +162,69 @@ files = [ ...
     "softarm_constrained_plant.slx", ...
     "softarm_flying_contact_demo.slx"];
 for file = files
-    verifyTrue(testCase,isfile(fullfile(root,file)));
+verifyTrue(testCase,isfile(fullfile(root,file)));
 end
 
 load_system(fullfile(root,"softarm_plant.slx"));
-cleanupPlant = onCleanup(@() close_system("softarm_plant",0)); %#ok<NASGU>
+cleanupPlant = onCleanup(@() close_system("softarm_plant",0));
 mask = Simulink.Mask.get("softarm_plant");
 verifyNotEmpty(testCase,mask);
 verifyEqual(testCase,{mask.Parameters.Name},{'Bundle'});
 verifyEqual(testCase,get_param("softarm_plant","ParameterArgumentNames"),'Bundle');
+outputs = rootOutports("softarm_plant");
+verifyEqual(testCase,outputs, ...
+    ["q_out","dq_out","tip_pose","diagnostic","backbone_poses"]);
+
+load_system(fullfile(root,"softarm_constrained_plant.slx"));
+cleanupConstrained = onCleanup(@() close_system("softarm_constrained_plant",0));
+outputs = rootOutports("softarm_constrained_plant");
+verifyEqual(testCase,outputs,["q_out","dq_out","tip_pose","reaction", ...
+    "is_feasible","constraint_rcond","backbone_poses"]);
 
 load_system(fullfile(root,"softarm_tendon_force_demo.slx"));
-cleanupForce = onCleanup(@() close_system("softarm_tendon_force_demo",0)); %#ok<NASGU>
+cleanupForce = onCleanup(@() close_system("softarm_tendon_force_demo",0));
 references = find_system("softarm_tendon_force_demo", ...
     "LookUnderMasks","all","BlockType","ModelReference");
 models = string(get_param(references,"ModelName"));
 verifyTrue(testCase,all(ismember( ...
     ["softarm_actuator_force_block","softarm_plant"],models)));
+verifyQLog(testCase,"softarm_tendon_force_demo","Plant");
+verifyEqual(testCase,get_param( ...
+    "softarm_tendon_force_demo","EnablePacing"),'off');
+verifyEqual(testCase,get_param( ...
+    "softarm_tendon_force_demo","ReturnWorkspaceOutputs"),'off');
+verifyTrue(testCase,isfile(fullfile(root,"matlab","softarm_pose_playback.m")));
+verifyTrue(testCase,isfile(fullfile(root,"matlab","+softarm", ...
+    "playbackBackbonePoses.m")));
 
 load_system(fullfile(root,"softarm_tendon_acceleration_demo.slx"));
 cleanupAcceleration = onCleanup(@() close_system( ...
-    "softarm_tendon_acceleration_demo",0)); %#ok<NASGU>
+    "softarm_tendon_acceleration_demo",0));
 references = find_system("softarm_tendon_acceleration_demo", ...
     "LookUnderMasks","all","BlockType","ModelReference");
 models = string(get_param(references,"ModelName"));
 verifyTrue(testCase,all(ismember( ...
     ["softarm_actuator_acceleration_block","softarm_plant"],models)));
+verifyQLog(testCase,"softarm_tendon_acceleration_demo","Plant");
+verifyEqual(testCase,get_param( ...
+    "softarm_tendon_acceleration_demo","ReturnWorkspaceOutputs"),'off');
+
+load_system(fullfile(root,"softarm_flying_contact_demo.slx"));
+cleanupContact = onCleanup(@() close_system( ...
+    "softarm_flying_contact_demo",0));
+verifyQLog(testCase,"softarm_flying_contact_demo","Constrained Plant");
+verifyEqual(testCase,get_param( ...
+    "softarm_flying_contact_demo","ReturnWorkspaceOutputs"),'off');
+verifyFalse(testCase,isfile(fullfile(root,"softarm_visualization_lib.slx")));
+end
+
+function testPoseStackWidths(testCase)
+for nodeCount = 1:3
+    transforms = repmat(eye(4),1,1,nodeCount);
+    [translation,rpy] = softarm.poseStackToAero(transforms(:));
+    verifySize(testCase,translation,[nodeCount 3]);
+    verifySize(testCase,rpy,[nodeCount 3]);
+end
 end
 
 function testEulerTwoSignedPairBundle(testCase)
@@ -154,6 +235,34 @@ verifyEqual(testCase,plant.nq,4);
 verifyEqual(testCase,plant.actuation.count,2);
 verifyEqual(testCase,string(plant.actuation.names),["pair_x","pair_y"]);
 verifyTrue(testCase,isfield(plant.actuation,"acceleration"));
+end
+
+function rotation = rotationZYX(angles)
+roll = angles(1); pitch = angles(2); yaw = angles(3);
+cx = cos(roll); sx = sin(roll);
+cy = cos(pitch); sy = sin(pitch);
+cz = cos(yaw); sz = sin(yaw);
+rotation = [ ...
+    cz*cy, cz*sy*sx-sz*cx, cz*sy*cx+sz*sx; ...
+    sz*cy, sz*sy*sx+cz*cx, sz*sy*cx-cz*sx; ...
+    -sy, cy*sx, cy*cx];
+end
+
+function names = rootOutports(model)
+ports = find_system(model,"SearchDepth",1,"BlockType","Outport");
+[~,order] = sort(str2double(get_param(ports,"Port")));
+names = string(get_param(ports(order),"Name")).';
+end
+
+function verifyQLog(testCase,model,source)
+logBlock = model+"/q log";
+verifyEqual(testCase,get_param(logBlock,"BlockType"),'ToWorkspace');
+verifyEqual(testCase,get_param(logBlock,"VariableName"),'softarm_q_log');
+verifyEqual(testCase,get_param(logBlock,"SaveFormat"),'Timeseries');
+verifyEqual(testCase,get_param(logBlock,"SampleTime"),'-1');
+connectivity = get_param(logBlock,"PortConnectivity");
+verifyEqual(testCase,string(getfullname(connectivity(1).SrcBlock)),model+"/"+source);
+verifyEqual(testCase,connectivity(1).SrcPort,0);
 end
 
 function testFloatingPlaneContactBundle(testCase)
