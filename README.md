@@ -53,7 +53,9 @@ MATLAB Engine         25.1.2
 Wolfram Mathematica   15.0.1
 ```
 
-Wolfram 后端为可选组件；默认后端为 SymPy。
+Wolfram 后端为可选组件；默认后端为 SymPy。选择 Wolfram 后端时，一个持久
+Kernel 会话会覆盖模型推导、解析积分、表达式优化、CSE 和代码生成。模型公式
+仍只在 Python/SymPy builder 中维护，所有公共结果仍为 SymPy 表达式。
 
 ## 2. 安装与快速开始
 

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from ..actuation import ActuationModel
 from ..derive import SymbolicPlant
+from ..backends.session import SymbolicSession
 from .matlab import render_function, symbol_loads
 
 
@@ -29,6 +30,7 @@ def generate_actuator_matlab(
     output: str | Path,
     backend: str = "sympy",
     wolfram_kernel: str | None = None,
+    symbolic: SymbolicSession | None = None,
 ) -> Path:
     target = Path(output).resolve()
     target.mkdir(parents=True, exist_ok=True)
@@ -48,6 +50,7 @@ def generate_actuator_matlab(
         common,
         backend,
         wolfram_kernel,
+        symbolic,
     )
     render_function(
         target / "softarm_actuator_jacobian.m",
@@ -59,6 +62,7 @@ def generate_actuator_matlab(
         common,
         backend,
         wolfram_kernel,
+        symbolic,
     )
     render_function(
         target / "softarm_actuator_velocity_bias.m",
@@ -70,6 +74,7 @@ def generate_actuator_matlab(
         q_loads + dq_loads + p_loads,
         backend,
         wolfram_kernel,
+        symbolic,
     )
 
     unilateral = [

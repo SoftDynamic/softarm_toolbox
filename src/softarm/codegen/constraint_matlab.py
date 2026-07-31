@@ -4,6 +4,7 @@ from pathlib import Path
 
 from ..constraints import ConstraintModel
 from ..derive import RuntimeParameter, SymbolicPlant
+from ..backends.session import SymbolicSession
 from .matlab import render_function, symbol_loads
 
 
@@ -30,6 +31,7 @@ def generate_constraint_matlab(
     backend: str = "sympy",
     wolfram_kernel: str | None = None,
     preceding_parameters: tuple[RuntimeParameter, ...] = (),
+    symbolic: SymbolicSession | None = None,
 ) -> Path:
     target = Path(output).resolve()
     target.mkdir(parents=True, exist_ok=True)
@@ -47,7 +49,7 @@ def generate_constraint_matlab(
     ):
         render_function(
             target / filename, function, output_name, matrix, matrix.shape,
-            inputs, loads, backend, wolfram_kernel,
+            inputs, loads, backend, wolfram_kernel, symbolic,
         )
 
     stabilization = constraint.stabilization_frequency.row_join(
@@ -63,6 +65,7 @@ def generate_constraint_matlab(
         p_loads,
         backend,
         wolfram_kernel,
+        symbolic,
     )
 
     unilateral = [

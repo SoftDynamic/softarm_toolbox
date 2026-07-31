@@ -10,6 +10,7 @@ from .actuation import derive_actuation
 from .constraints import derive_constraint
 from .config import ConfigError, load_config
 from .derive import derive
+from .backends.session import create_session
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -51,18 +52,20 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(json.loads(manifest.read_text(encoding="utf-8")), indent=2))
             return 0
         config = load_config(args.config)
-        plant = derive(config)
-        actuation = derive_actuation(plant)
-        constraint = derive_constraint(plant)
-        output = generate_matlab_bundle(
-            plant,
-            args.out,
-            args.backend,
-            args.wolfram_kernel,
-            actuation,
-            constraint,
-            args.tex_appendix,
-        )
+        with create_session(args.backend, args.wolfram_kernel) as symbolic:
+            plant = derive(config, symbolic=symbolic)
+            actuation = derive_actuation(plant, symbolic=symbolic)
+            constraint = derive_constraint(plant, symbolic=symbolic)
+            output = generate_matlab_bundle(
+                plant,
+                args.out,
+                args.backend,
+                args.wolfram_kernel,
+                actuation,
+                constraint,
+                args.tex_appendix,
+                symbolic,
+            )
         print(output)
         return 0
     except (ConfigError, RuntimeError, OSError, ValueError) as error:

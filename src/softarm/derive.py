@@ -6,12 +6,13 @@ from typing import Callable
 
 import sympy as sp
 
+from .backends.session import SymbolicSession, create_session
 from .config import ModelConfig, broadcast
 from .geometry import (
     angular_jacobian, cosserat_pcs_transform, euler_ritz_transform,
     pcc_transform, polynomial, transform_rpy,
 )
-from .integration import integrate_unit
+from .integration import integrate_unit, unit_gauss_rule
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,7 @@ class SymbolicPlant:
     base_jacobian: sp.Matrix
     vehicle_wrench_map: sp.Matrix
     arm_force_map: sp.Matrix
+    _symbolic: SymbolicSession | None = None
     _bias: sp.Matrix | None = None
 
     @property
@@ -50,6 +52,12 @@ class SymbolicPlant:
     @property
     def coordinate_names(self) -> list[str]:
         return [str(item) for item in self.q]
+
+    def close(self) -> None:
+        """Close an owned persistent symbolic backend, if any."""
+        if self._symbolic is not None:
+            self._symbolic.close()
+            self._symbolic = None
 
     @property
     def base_coordinate_names(self) -> list[str]:
@@ -62,10 +70,56 @@ class SymbolicPlant:
     @property
     def bias(self) -> sp.Matrix:
         if self._bias is None:
-            kinetic_gradient = (self.dq.T * self.mass * self.dq)[0]
-            coriolis = (self.mass * self.dq).jacobian(self.q) * self.dq - sp.Rational(1, 2) * sp.Matrix([kinetic_gradient]).jacobian(self.q).T
-            conservative = sp.Matrix([self.potential]).jacobian(self.q).T
-            self._bias = coriolis + conservative + self.damping * self.dq
+            symbolic = self._symbolic or SymbolicSession()
+            if symbolic.backend == "wolfram":
+                nq = len(self.q)
+                upper = [
+                    (row, column)
+                    for row in range(nq)
+                    for column in range(row, nq)
+                ]
+                derivatives = symbolic.differentiate(
+                    [self.mass[row, column] for row, column in upper]
+                    + [self.potential],
+                    list(self.q),
+                )
+                conservative = sp.Matrix(derivatives[-nq:])
+                mass_derivatives: dict[tuple[int, int, int], sp.Expr] = {}
+                for pair_index, (row, column) in enumerate(upper):
+                    for coordinate in range(nq):
+                        value = derivatives[pair_index * nq + coordinate]
+                        mass_derivatives[coordinate, row, column] = value
+                        mass_derivatives[coordinate, column, row] = value
+                coriolis = sp.Matrix([
+                    sp.Add(*(
+                        mass_derivatives[k, i, j] * self.dq[j] * self.dq[k]
+                        - sp.Rational(1, 2)
+                        * mass_derivatives[i, j, k]
+                        * self.dq[j] * self.dq[k]
+                        for j in range(nq)
+                        for k in range(nq)
+                    ))
+                    for i in range(nq)
+                ])
+            else:
+                momentum = self.mass * self.dq
+                kinetic = (self.dq.T * self.mass * self.dq)[0]
+                momentum_jacobian = symbolic.jacobian(
+                    momentum, list(self.q)
+                )
+                kinetic_gradient = symbolic.jacobian(
+                    sp.Matrix([kinetic]), list(self.q)
+                ).T
+                conservative = symbolic.jacobian(
+                    sp.Matrix([self.potential]), list(self.q)
+                ).T
+                coriolis = (
+                    momentum_jacobian * self.dq
+                    - sp.Rational(1, 2) * kinetic_gradient
+                )
+            self._bias = symbolic.optimize_matrix(
+                coriolis + conservative + self.damping * self.dq
+            )
         return self._bias
 
 
@@ -113,30 +167,47 @@ def _base_coordinates(config: ModelConfig) -> tuple[sp.Matrix, sp.Matrix]:
     return q, dq
 
 
-def _linearize_matrix(matrix: sp.Matrix, q: sp.Matrix) -> sp.Matrix:
+def _linearize_matrix(
+    matrix: sp.Matrix, q: sp.Matrix, symbolic: SymbolicSession
+) -> sp.Matrix:
     zero = {coordinate: 0 for coordinate in q}
     return matrix.applyfunc(
-        lambda value: value.subs(zero) + sum(sp.diff(value, coordinate).subs(zero) * coordinate for coordinate in q)
+        lambda value: symbolic.substitute(value, zero)
+        + sum(
+            symbolic.substitute(symbolic.diff(value, coordinate), zero)
+            * coordinate
+            for coordinate in q
+        )
     )
 
 
-def _linear_angular_jacobian(rotation: sp.Matrix, q: sp.Matrix) -> sp.Matrix:
+def _linear_angular_jacobian(
+    rotation: sp.Matrix, q: sp.Matrix, symbolic: SymbolicSession
+) -> sp.Matrix:
     columns = []
     for coordinate in q:
-        rate = sp.diff(rotation, coordinate)
+        rate = symbolic.diff_matrix(rotation, coordinate)
         columns.append(sp.Matrix([rate[2, 1] - rate[1, 2], rate[0, 2] - rate[2, 0], rate[1, 0] - rate[0, 1]]) / 2)
     return sp.Matrix.hstack(*columns)
 
 
 def _mixed_linear_angular_jacobian(
-    rotation: sp.Matrix, q: sp.Matrix, linear_coordinates: sp.Matrix
+    rotation: sp.Matrix,
+    q: sp.Matrix,
+    linear_coordinates: sp.Matrix,
+    symbolic: SymbolicSession,
 ) -> sp.Matrix:
     """Spatial angular Jacobian exact in the base attitude and first order in arm shape."""
     zero = {coordinate: 0 for coordinate in linear_coordinates}
-    reference_rotation = rotation.subs(zero)
+    reference_rotation = symbolic.substitute(rotation, zero)
     columns = []
     for coordinate in q:
-        rate = sp.diff(rotation, coordinate).subs(zero) * reference_rotation.T
+        rate = (
+            symbolic.substitute(
+                symbolic.diff_matrix(rotation, coordinate), zero
+            )
+            * reference_rotation.T
+        )
         skew = (rate - rate.T) / 2
         columns.append(sp.Matrix([skew[2, 1], skew[0, 2], skew[1, 0]]))
     return sp.Matrix.hstack(*columns)
@@ -149,20 +220,24 @@ def _point_terms(
     inertia: sp.Matrix,
     linear_rotation: bool = False,
     linear_coordinates: sp.Matrix | None = None,
+    symbolic: SymbolicSession | None = None,
 ) -> tuple[sp.Matrix, sp.Expr]:
+    executor = symbolic or SymbolicSession()
     position = H[:3, 3]
     rotation = H[:3, :3]
-    jv = position.jacobian(q)
+    jv = executor.jacobian(position, list(q))
     if linear_rotation:
         selected_coordinates = linear_coordinates if linear_coordinates is not None else q
-        jw = _mixed_linear_angular_jacobian(rotation, q, selected_coordinates)
+        jw = _mixed_linear_angular_jacobian(
+            rotation, q, selected_coordinates, executor
+        )
         zero = {coordinate: 0 for coordinate in selected_coordinates}
-        rotation_for_inertia = rotation.subs(zero)
+        rotation_for_inertia = executor.substitute(rotation, zero)
     else:
-        jw = angular_jacobian(rotation, q)
+        jw = angular_jacobian(rotation, q, executor)
         rotation_for_inertia = rotation
     mass_term = mass * (jv.T * jv) + jw.T * (rotation_for_inertia * inertia * rotation_for_inertia.T) * jw
-    return mass_term, position[2]
+    return executor.optimize_matrix(mass_term), position[2]
 
 
 def _derive_common(
@@ -178,7 +253,9 @@ def _derive_common(
     elastic: sp.Expr,
     distributed: bool,
     linear_kinematics: bool = False,
+    symbolic: SymbolicSession | None = None,
 ) -> SymbolicPlant:
+    executor = symbolic or SymbolicSession()
     gravity = parameters.global_value("gravity", 9.81)
     tip_mass = parameters.global_value("tip_mass", 0.1)
     tip_ixx = parameters.global_value("tip_Ixx", 0.01)
@@ -200,7 +277,8 @@ def _derive_common(
         base_transform = transform_rpy(base_q[:3, 0], tuple(base_q[3:6, 0]))
         vehicle_inertia = sp.diag(vehicle_ixx, vehicle_iyy, vehicle_izz)
         vehicle_term, vehicle_height = _point_terms(
-            base_transform, q, vehicle_mass, vehicle_inertia
+            base_transform, q, vehicle_mass, vehicle_inertia,
+            symbolic=executor,
         )
         mass_matrix += vehicle_term
         potential -= vehicle_mass * gravity * vehicle_height
@@ -219,26 +297,55 @@ def _derive_common(
         local_end = local_transform(section, sp.S.One)
         end = base * local_end
         if linear_kinematics:
-            end = _linearize_matrix(end, arm_q)
+            end = _linearize_matrix(end, arm_q, executor)
         transforms.append(end)
 
         if distributed:
-            material = base * local_transform(section, xi)
-            if linear_kinematics:
-                material = _linearize_matrix(material, arm_q)
-            point_mass, height = _point_terms(
-                material, q, masses[section], inertias[section],
-                linear_kinematics, arm_q if linear_kinematics else None,
-            )
-            mass_matrix += integrate_unit(point_mass, xi, config.integration, f"section {section + 1} inertia")
-            potential -= masses[section] * gravity * integrate_unit(height, xi, config.integration, f"section {section + 1} gravity")
+            if config.integration.method == "gauss":
+                for node, weight in unit_gauss_rule(config.integration):
+                    material = base * local_transform(section, node)
+                    if linear_kinematics:
+                        material = _linearize_matrix(
+                            material, arm_q, executor
+                        )
+                    point_mass, height = _point_terms(
+                        material, q, masses[section], inertias[section],
+                        linear_kinematics,
+                        arm_q if linear_kinematics else None,
+                        executor,
+                    )
+                    mass_matrix += weight * point_mass
+                    potential -= (
+                        masses[section] * gravity * weight * height
+                    )
+            else:
+                material = base * local_transform(section, xi)
+                if linear_kinematics:
+                    material = _linearize_matrix(
+                        material, arm_q, executor
+                    )
+                point_mass, height = _point_terms(
+                    material, q, masses[section], inertias[section],
+                    linear_kinematics,
+                    arm_q if linear_kinematics else None,
+                    executor,
+                )
+                mass_matrix += integrate_unit(
+                    point_mass, xi, config.integration,
+                    f"section {section + 1} inertia", executor
+                )
+                potential -= masses[section] * gravity * integrate_unit(
+                    height, xi, config.integration,
+                    f"section {section + 1} gravity", executor
+                )
         else:
             midpoint = base * local_transform(section, sp.Rational(1, 2))
             if linear_kinematics:
-                midpoint = _linearize_matrix(midpoint, arm_q)
+                midpoint = _linearize_matrix(midpoint, arm_q, executor)
             point_mass, height = _point_terms(
                 midpoint, q, masses[section], inertias[section],
                 linear_kinematics, arm_q if linear_kinematics else None,
+                executor,
             )
             mass_matrix += point_mass
             potential -= masses[section] * gravity * height
@@ -246,15 +353,17 @@ def _derive_common(
 
     end_position = base[:3, 3]
     end_rotation = base[:3, :3]
-    jv_end = end_position.jacobian(q)
+    jv_end = executor.jacobian(end_position, list(q))
     jw_end = (
-        _mixed_linear_angular_jacobian(end_rotation, q, arm_q)
-        if linear_kinematics else angular_jacobian(end_rotation, q)
+        _mixed_linear_angular_jacobian(
+            end_rotation, q, arm_q, executor
+        )
+        if linear_kinematics else angular_jacobian(end_rotation, q, executor)
     )
     tip_inertia = sp.diag(tip_ixx, tip_iyy, tip_izz)
     if linear_kinematics:
         zero = {coordinate: 0 for coordinate in arm_q}
-        tip_rotation = end_rotation.subs(zero)
+        tip_rotation = executor.substitute(end_rotation, zero)
     else:
         tip_rotation = end_rotation
     mass_matrix += tip_mass * (jv_end.T * jv_end) + jw_end.T * (tip_rotation * tip_inertia * tip_rotation.T) * jw_end
@@ -265,8 +374,8 @@ def _derive_common(
     base_position = base_transform[:3, 3]
     base_rotation = base_transform[:3, :3]
     if len(base_q):
-        base_jv = base_position.jacobian(q)
-        base_jw = angular_jacobian(base_rotation, q)
+        base_jv = executor.jacobian(base_position, list(q))
+        base_jw = angular_jacobian(base_rotation, q, executor)
         base_jacobian = base_jv.col_join(base_jw)
         wrench_rotation = sp.diag(base_rotation, base_rotation)
         vehicle_wrench_map = base_jacobian.T * wrench_rotation
@@ -281,11 +390,23 @@ def _derive_common(
         config, q, dq, base_q, base_dq, arm_q, arm_dq,
         tuple(parameters.items), mass_matrix, potential, sp.diag(*full_damping),
         kinematics, end_jacobian, base_transform, base, base_jacobian,
-        vehicle_wrench_map, arm_force_map,
+        vehicle_wrench_map, arm_force_map, executor,
     )
 
 
-def _derive_pcc(config: ModelConfig) -> SymbolicPlant:
+def _derive_pcc(
+    config: ModelConfig, symbolic: SymbolicSession | None = None
+) -> SymbolicPlant:
+    # For lumped multi-section PCC, eager SymPy geometry differentiation is
+    # substantially cheaper than transferring many small derivative tasks.
+    # The expensive energy bias still uses the requested session stored below.
+    assembly = (
+        SymbolicSession()
+        if symbolic is not None
+        and symbolic.backend == "wolfram"
+        and config.inertia == "lumped"
+        else symbolic
+    )
     q, dq = _arm_coordinates(config, ("bx", "by", "l"))
     pb = _ParameterBuilder(config)
     lengths = pb.sections("rest_length", 0.5)
@@ -315,12 +436,18 @@ def _derive_pcc(config: ModelConfig) -> SymbolicPlant:
             + kl[section] * (q[offset + 2] - lengths[section]) ** 2
         )
         damping.extend([dbx[section], dby[section], dl[section]])
-    return _derive_common(
-        config, q, dq, pb, local, lengths, masses, inertias, damping, elastic, config.inertia == "distributed"
+    plant = _derive_common(
+        config, q, dq, pb, local, lengths, masses, inertias, damping,
+        elastic, config.inertia == "distributed", symbolic=assembly
     )
+    plant._symbolic = symbolic or assembly
+    return plant
 
 
-def _derive_euler(config: ModelConfig) -> SymbolicPlant:
+def _derive_euler(
+    config: ModelConfig, symbolic: SymbolicSession | None = None
+) -> SymbolicPlant:
+    executor = symbolic or SymbolicSession()
     q, dq = _arm_coordinates(config, ("ax", "ay"))
     pb = _ParameterBuilder(config)
     lengths = pb.sections("length", 0.5)
@@ -336,8 +463,8 @@ def _derive_euler(config: ModelConfig) -> SymbolicPlant:
     xi = sp.Symbol("xi", real=True, nonnegative=True)
     psi_x = polynomial(config.ritz_x or (), xi)
     psi_y = polynomial(config.ritz_y or (), xi)
-    dpsi_x = sp.diff(psi_x, xi)
-    dpsi_y = sp.diff(psi_y, xi)
+    dpsi_x = executor.diff(psi_x, xi)
+    dpsi_y = executor.diff(psi_y, xi)
 
     def local(section: int, local_xi: sp.Expr) -> sp.Matrix:
         offset = 2 * section
@@ -347,10 +474,16 @@ def _derive_euler(config: ModelConfig) -> SymbolicPlant:
             dpsi_x.subs(xi, local_xi), dpsi_y.subs(xi, local_xi),
         )
 
-    curvature_x = sp.diff(psi_x, xi, 2)
-    curvature_y = sp.diff(psi_y, xi, 2)
-    integral_x = integrate_unit(curvature_x**2, xi, config.integration, "Euler x Ritz stiffness")
-    integral_y = integrate_unit(curvature_y**2, xi, config.integration, "Euler y Ritz stiffness")
+    curvature_x = executor.diff(executor.diff(psi_x, xi), xi)
+    curvature_y = executor.diff(executor.diff(psi_y, xi), xi)
+    integral_x = integrate_unit(
+        curvature_x**2, xi, config.integration,
+        "Euler x Ritz stiffness", executor
+    )
+    integral_y = integrate_unit(
+        curvature_y**2, xi, config.integration,
+        "Euler y Ritz stiffness", executor
+    )
     elastic = sp.S.Zero
     damping: list[sp.Expr] = []
     for section in range(config.segments):
@@ -360,10 +493,15 @@ def _derive_euler(config: ModelConfig) -> SymbolicPlant:
             + eix[section] * q[offset + 1] ** 2 * integral_y / lengths[section] ** 3
         )
         damping.extend([dax[section], day[section]])
-    return _derive_common(config, q, dq, pb, local, lengths, masses, inertias, damping, elastic, True, True)
+    return _derive_common(
+        config, q, dq, pb, local, lengths, masses, inertias, damping,
+        elastic, True, True, executor
+    )
 
 
-def _derive_cosserat_pcs(config: ModelConfig) -> SymbolicPlant:
+def _derive_cosserat_pcs(
+    config: ModelConfig, symbolic: SymbolicSession | None = None
+) -> SymbolicPlant:
     q, dq = _arm_coordinates(config, ("kx", "ky", "kz", "vx", "vy", "vz"))
     pb = _ParameterBuilder(config)
     lengths = pb.sections("length", 0.5)
@@ -427,14 +565,16 @@ def _derive_cosserat_pcs(config: ModelConfig) -> SymbolicPlant:
         ])
     return _derive_common(
         config, q, dq, pb, local, lengths, masses, inertias, damping, elastic,
-        config.inertia == "distributed",
+        config.inertia == "distributed", symbolic=symbolic,
     )
 
 
 _CACHE: dict[str, SymbolicPlant] = {}
 
 
-_MODEL_BUILDERS: dict[str, Callable[[ModelConfig], SymbolicPlant]] = {
+_MODEL_BUILDERS: dict[
+    str, Callable[[ModelConfig, SymbolicSession | None], SymbolicPlant]
+] = {
     "pcc": _derive_pcc,
     "euler": _derive_euler,
     "cosserat_pcs": _derive_cosserat_pcs,
@@ -445,10 +585,16 @@ def register_model(name: str, builder: Callable[[ModelConfig], SymbolicPlant]) -
     """Register a model builder that returns a SymPy-backed SymbolicPlant."""
     if not name or name in _MODEL_BUILDERS:
         raise ValueError(f"model family {name!r} is already registered or invalid")
-    _MODEL_BUILDERS[name] = builder
+    _MODEL_BUILDERS[name] = lambda config, symbolic=None: builder(config)
 
 
-def derive(config: ModelConfig) -> SymbolicPlant:
+def derive(
+    config: ModelConfig,
+    backend: str = "sympy",
+    wolfram_kernel: str | None = None,
+    symbolic: SymbolicSession | None = None,
+) -> SymbolicPlant:
+    executor = symbolic or create_session(backend, wolfram_kernel)
     key = json.dumps({
         "family": config.family,
         "segments": config.segments,
@@ -458,13 +604,14 @@ def derive(config: ModelConfig) -> SymbolicPlant:
         "ritz_x": config.ritz_x,
         "ritz_y": config.ritz_y,
         "base": [config.base.mode, config.base.mount_xyz, config.base.mount_rpy],
+        "backend": executor.cache_identity,
     }, sort_keys=True)
     if key not in _CACHE:
         try:
             builder = _MODEL_BUILDERS[config.family]
         except KeyError as error:
             raise ValueError(f"unregistered model family: {config.family}") from error
-        _CACHE[key] = builder(config)
+        _CACHE[key] = builder(config, executor)
     # Actuation is deliberately not part of the expensive physical-model cache,
     # but callers must retain the actuation attached to their own configuration.
-    return replace(_CACHE[key], config=config)
+    return replace(_CACHE[key], config=config, _symbolic=executor)

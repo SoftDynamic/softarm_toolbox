@@ -7,7 +7,7 @@ from typing import Iterable
 import sympy as sp
 from sympy.printing.octave import OctaveCodePrinter
 
-from ..backends import optimize
+from ..backends.session import SymbolicSession, create_session
 from ..actuation import ActuationModel
 from ..constraints import ConstraintModel
 from ..derive import SymbolicPlant
@@ -60,9 +60,12 @@ def render_function(
     loads: list[str],
     backend: str,
     wolfram_kernel: str | None,
+    symbolic: SymbolicSession | None = None,
 ) -> None:
-    expressions = optimize(_flatten(matrix), backend, wolfram_kernel)
-    replacements, reduced = sp.cse(expressions, symbols=sp.numbered_symbols("t"), order="none")
+    owned = symbolic is None
+    executor = symbolic or create_session(backend, wolfram_kernel)
+    expressions = executor.optimize(_flatten(matrix))
+    replacements, reduced = executor.cse(expressions, prefix="t", order="none")
     printer = _MatlabPrinter()
     lines = [f"function {output_name} = {name}({','.join(inputs)})", "% Generated from the SymPy model. Do not edit.", "%#codegen"]
     lines.extend(loads)
@@ -72,6 +75,8 @@ def render_function(
     lines.append(f"{output_name} = reshape([{vector}],{dimensions});")
     lines.append("end")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    if owned:
+        executor.close()
 
 
 _HELPERS = {
@@ -95,27 +100,37 @@ def generate_matlab_bundle(
     actuation: ActuationModel | None = None,
     constraint: ConstraintModel | None = None,
     tex_appendix: bool = False,
+    symbolic: SymbolicSession | None = None,
 ) -> Path:
+    executor = symbolic
+    if executor is None:
+        candidate = plant._symbolic
+        executor = (
+            candidate
+            if candidate is not None and candidate.backend == backend
+            else create_session(backend, wolfram_kernel)
+        )
+    owned = symbolic is None and executor is not plant._symbolic
     target = Path(output).resolve()
     target.mkdir(parents=True, exist_ok=True)
     q_loads = symbol_loads(plant.q, "q")
     dq_loads = symbol_loads(plant.dq, "dq")
     p_loads = symbol_loads([item.symbol for item in plant.parameters], "p")
     common = q_loads + p_loads
-    render_function(target / "softarm_mass.m", "softarm_mass", "M", plant.mass, plant.mass.shape, ["q", "p"], common, backend, wolfram_kernel)
-    render_function(target / "softarm_bias.m", "softarm_bias", "h", plant.bias, plant.bias.shape, ["q", "dq", "p"], q_loads + dq_loads + p_loads, backend, wolfram_kernel)
+    render_function(target / "softarm_mass.m", "softarm_mass", "M", plant.mass, plant.mass.shape, ["q", "p"], common, backend, wolfram_kernel, executor)
+    render_function(target / "softarm_bias.m", "softarm_bias", "h", plant.bias, plant.bias.shape, ["q", "dq", "p"], q_loads + dq_loads + p_loads, backend, wolfram_kernel, executor)
     render_function(
         target / "softarm_kinematics.m", "softarm_kinematics", "H", plant.kinematics,
-        (4, 4, plant.config.segments), ["q", "p"], common, backend, wolfram_kernel,
+        (4, 4, plant.config.segments), ["q", "p"], common, backend, wolfram_kernel, executor,
     )
     render_function(
         target / "softarm_end_jacobian.m", "softarm_end_jacobian", "J", plant.end_jacobian,
-        plant.end_jacobian.shape, ["q", "p"], common, backend, wolfram_kernel,
+        plant.end_jacobian.shape, ["q", "p"], common, backend, wolfram_kernel, executor,
     )
     render_function(
         target / "softarm_vehicle_wrench_map.m", "softarm_vehicle_wrench_map", "Bv",
         plant.vehicle_wrench_map, plant.vehicle_wrench_map.shape, ["q", "p"], common,
-        backend, wolfram_kernel,
+        backend, wolfram_kernel, executor,
     )
     (target / "softarm_applied_force.m").write_text(
         (
@@ -142,14 +157,16 @@ def generate_matlab_bundle(
 
     clear_actuator_functions(target)
     if actuation is not None:
-        generate_actuator_matlab(plant, actuation, target, backend, wolfram_kernel)
+        generate_actuator_matlab(
+            plant, actuation, target, backend, wolfram_kernel, executor
+        )
     from .constraint_matlab import clear_constraint_functions, generate_constraint_matlab
 
     clear_constraint_functions(target)
     if constraint is not None:
         generate_constraint_matlab(
             plant, constraint, target, backend, wolfram_kernel,
-            () if actuation is None else actuation.parameters,
+            () if actuation is None else actuation.parameters, executor,
         )
     runtime_parameters = (
         plant.parameters
@@ -196,5 +213,8 @@ def generate_matlab_bundle(
         include_appendix=tex_appendix,
         backend=backend,
         wolfram_kernel=wolfram_kernel,
+        symbolic=executor,
     )
+    if owned:
+        executor.close()
     return target

@@ -5,10 +5,11 @@
 
 ## 1. 架构边界
 
-- SymPy 表达式是运动学、能量、动力学、执行器和约束公式的规范表示，
-  符号推导与材料坐标积分均在该层完成。
-- Wolfram 后端提供可选的表达式优化与 CSE；MATLAB 和 Simulink 消费生成的
-  数值函数。
+- SymPy 表达式和通用符号任务图是运动学、能量、动力学、执行器和约束公式的
+  规范表示；所有模型公式只在 Python/SymPy builder 中定义。
+- SymPy 后端直接执行通用符号任务。Wolfram 后端可执行矩阵运算、求导、
+  材料坐标积分、表达式优化与 CSE，但 WLS bridge 中不得包含模型专用公式。
+  后端结果必须转换回 SymPy 公共表达式；MATLAB 和 Simulink 消费生成的数值函数。
 - 同一公式不得在 Python、Wolfram 和 MATLAB 层分别维护。
 - `SymbolicPlant` 的公共结果保持为 `mass`、`potential`、`damping`、
   `kinematics` 和 `end_jacobian`；`bias` 由统一能量公式构造。
@@ -53,10 +54,11 @@
 
 ## 3. 积分与后端
 
-- `integration.method = "analytic"` 表示由 SymPy 执行材料坐标解析积分。
+- `integration.method = "analytic"` 表示由所选符号后端执行材料坐标解析积分，
+  输入公式、积分变量、精确边界和符号假设均来自 SymPy 任务图。
 - `integration.method = "gauss"` 表示显式生成指定阶数的 Gauss–Legendre 求和。
 - 积分方法由配置确定；解析积分错误应作为构建错误报告。
-- SymPy 和 Wolfram 后端必须对同一中间表达式保持数值一致。
+- SymPy 和 Wolfram 后端必须对同一任务图保持数值一致。
 
 ## 4. 执行器与约束
 

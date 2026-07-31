@@ -8,7 +8,7 @@ import sympy as sp
 from sympy.printing.latex import LatexPrinter
 
 from ..actuation import ActuationModel
-from ..backends import optimize
+from ..backends.session import SymbolicSession, create_session
 from ..constraints import ConstraintModel
 from ..derive import RuntimeParameter, SymbolicPlant
 from ..geometry import euler_ritz_transform, pcc_transform, polynomial, transform_rpy
@@ -487,12 +487,17 @@ def _cse_data(
     slug: str,
     backend: str,
     wolfram_kernel: str | None,
+    symbolic: SymbolicSession | None = None,
 ) -> tuple[list[tuple[sp.Symbol, sp.Expr]], list[sp.Expr]]:
-    optimized = optimize(expressions, backend, wolfram_kernel)
-    replacements, reduced = sp.cse(
-        optimized, symbols=sp.numbered_symbols(f"cse_{slug}_"), order="canonical"
+    owned = symbolic is None
+    executor = symbolic or create_session(backend, wolfram_kernel)
+    optimized = executor.optimize(expressions)
+    replacements, reduced = executor.cse(
+        optimized, prefix=f"cse_{slug}_", order="canonical"
     )
-    return list(replacements), list(reduced)
+    if owned:
+        executor.close()
+    return replacements, reduced
 
 
 def _reconstruct_cse(
@@ -523,6 +528,7 @@ def _appendix_block(
     backend: str,
     wolfram_kernel: str | None,
     upper: bool = False,
+    symbolic: SymbolicSession | None = None,
 ) -> str:
     indexed: list[tuple[int, int, sp.Expr]] = []
     for row in range(matrix.rows):
@@ -531,7 +537,7 @@ def _appendix_block(
                 continue
             indexed.append((row, column, matrix[row, column]))
     replacements, reduced = _cse_data(
-        [item[2] for item in indexed], slug, backend, wolfram_kernel
+        [item[2] for item in indexed], slug, backend, wolfram_kernel, symbolic
     )
     definitions = [
         rf"{_math(temp, printer)}&={_math(expression, printer)}"
@@ -556,32 +562,33 @@ def _appendix(
     printer: SoftArmLatexPrinter,
     backend: str,
     wolfram_kernel: str | None,
+    symbolic: SymbolicSession | None = None,
 ) -> str:
     blocks = [
         r"\appendix",
         r"\section{Exact Symbolic Appendix}",
         r"This appendix is generated from the exact symbolic outputs. Indices are one-based; the lower mass-matrix triangle follows by symmetry.",
         _equation(r"M_{ji}=M_{ij}\qquad(j>i)"),
-        _appendix_block("Potential energy", "v", sp.Matrix([plant.potential]), "V", printer, backend, wolfram_kernel),
-        _appendix_block("Damping matrix", "d", plant.damping, "D", printer, backend, wolfram_kernel),
-        _appendix_block("Mass matrix", "m", plant.mass, "M", printer, backend, wolfram_kernel, upper=True),
-        _appendix_block("Bias vector", "h", plant.bias, "h", printer, backend, wolfram_kernel),
-        _appendix_block("End transform", "he", plant.end_transform, "H^e", printer, backend, wolfram_kernel),
-        _appendix_block("End Jacobian", "je", plant.end_jacobian, "J^e", printer, backend, wolfram_kernel),
-        _appendix_block("Vehicle wrench map", "bv", plant.vehicle_wrench_map, "B^v", printer, backend, wolfram_kernel),
+        _appendix_block("Potential energy", "v", sp.Matrix([plant.potential]), "V", printer, backend, wolfram_kernel, symbolic=symbolic),
+        _appendix_block("Damping matrix", "d", plant.damping, "D", printer, backend, wolfram_kernel, symbolic=symbolic),
+        _appendix_block("Mass matrix", "m", plant.mass, "M", printer, backend, wolfram_kernel, upper=True, symbolic=symbolic),
+        _appendix_block("Bias vector", "h", plant.bias, "h", printer, backend, wolfram_kernel, symbolic=symbolic),
+        _appendix_block("End transform", "he", plant.end_transform, "H^e", printer, backend, wolfram_kernel, symbolic=symbolic),
+        _appendix_block("End Jacobian", "je", plant.end_jacobian, "J^e", printer, backend, wolfram_kernel, symbolic=symbolic),
+        _appendix_block("Vehicle wrench map", "bv", plant.vehicle_wrench_map, "B^v", printer, backend, wolfram_kernel, symbolic=symbolic),
     ]
     if actuation is not None:
         blocks.extend([
-            _appendix_block("Actuator coordinates", "ay", actuation.coordinates, "y", printer, backend, wolfram_kernel),
-            _appendix_block("Actuator Jacobian", "aja", actuation.jacobian, "J^a", printer, backend, wolfram_kernel),
-            _appendix_block("Actuator velocity bias", "ag", actuation.velocity_bias, r"\gamma^a", printer, backend, wolfram_kernel),
+            _appendix_block("Actuator coordinates", "ay", actuation.coordinates, "y", printer, backend, wolfram_kernel, symbolic=symbolic),
+            _appendix_block("Actuator Jacobian", "aja", actuation.jacobian, "J^a", printer, backend, wolfram_kernel, symbolic=symbolic),
+            _appendix_block("Actuator velocity bias", "ag", actuation.velocity_bias, r"\gamma^a", printer, backend, wolfram_kernel, symbolic=symbolic),
         ])
     if constraint is not None:
         blocks.extend([
-            _appendix_block("Constraint coordinates", "cp", constraint.coordinates, r"\phi", printer, backend, wolfram_kernel),
-            _appendix_block("Constraint Jacobian", "ca", constraint.jacobian, "A", printer, backend, wolfram_kernel),
-            _appendix_block("Constraint velocity bias", "cg", constraint.velocity_bias, r"\gamma", printer, backend, wolfram_kernel),
-            _appendix_block("Constraint reaction map", "cr", constraint.reaction_map, "G", printer, backend, wolfram_kernel),
+            _appendix_block("Constraint coordinates", "cp", constraint.coordinates, r"\phi", printer, backend, wolfram_kernel, symbolic=symbolic),
+            _appendix_block("Constraint Jacobian", "ca", constraint.jacobian, "A", printer, backend, wolfram_kernel, symbolic=symbolic),
+            _appendix_block("Constraint velocity bias", "cg", constraint.velocity_bias, r"\gamma", printer, backend, wolfram_kernel, symbolic=symbolic),
+            _appendix_block("Constraint reaction map", "cr", constraint.reaction_map, "G", printer, backend, wolfram_kernel, symbolic=symbolic),
         ])
     return "\n".join(blocks)
 
@@ -594,6 +601,7 @@ def generate_latex_document(
     include_appendix: bool = False,
     backend: str = "sympy",
     wolfram_kernel: str | None = None,
+    symbolic: SymbolicSession | None = None,
 ) -> Path:
     """Generate a deterministic, standalone mathematical description of a model."""
     target = Path(output).resolve()
@@ -628,6 +636,7 @@ def generate_latex_document(
     if include_appendix:
         sections.append(_appendix(
             plant, actuation, constraint, printer, backend, wolfram_kernel
+            , symbolic
         ))
     sections.append(r"\end{document}")
     path = target / "softarm_model.tex"

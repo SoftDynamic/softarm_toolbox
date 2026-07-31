@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sympy as sp
 
+from .backends.session import SymbolicSession
 from .special import CoscSqrt, Sinc3Sqrt, SincSqrt
 
 
@@ -99,10 +100,15 @@ def vex(skew: sp.Matrix) -> sp.Matrix:
     return sp.Matrix([skew[2, 1], skew[0, 2], skew[1, 0]])
 
 
-def angular_jacobian(rotation: sp.Matrix, q: sp.Matrix) -> sp.Matrix:
+def angular_jacobian(
+    rotation: sp.Matrix,
+    q: sp.Matrix,
+    symbolic: SymbolicSession | None = None,
+) -> sp.Matrix:
+    executor = symbolic or SymbolicSession()
     columns = []
     for coordinate in q:
-        rate = sp.diff(rotation, coordinate) * rotation.T
+        rate = executor.diff_matrix(rotation, coordinate) * rotation.T
         skew = (rate - rate.T) / 2
         columns.append(vex(skew))
     return sp.Matrix.hstack(*columns)

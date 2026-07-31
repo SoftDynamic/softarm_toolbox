@@ -72,6 +72,18 @@ class Sinc3SqrtDD(sp.Function):
     nargs = 1
 
 
+# This registry is the sole source used to teach generic CAS executors the
+# symbolic derivative heads. It contains no backend-specific formula.
+SPECIAL_DERIVATIVE_HEADS = (
+    ("SincSqrt", "SincSqrtD"),
+    ("SincSqrtD", "SincSqrtDD"),
+    ("CoscSqrt", "CoscSqrtD"),
+    ("CoscSqrtD", "CoscSqrtDD"),
+    ("Sinc3Sqrt", "Sinc3SqrtD"),
+    ("Sinc3SqrtD", "Sinc3SqrtDD"),
+)
+
+
 def _series_sinc(z: float) -> float:
     return 1.0 - z / 6.0 + z * z / 120.0 - z**3 / 5040.0 + z**4 / 362880.0
 
