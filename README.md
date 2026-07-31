@@ -1,28 +1,360 @@
 # SoftArm Toolbox
 
-这是一个以 SymPy 为唯一数学表达式来源的连续体机械臂建模、MATLAB 数值仿真和控制设计基础工具箱。Wolfram 15 是可选重型 CAS；MATLAB/Simulink 只消费生成的数值函数，不参与符号建模。
+SoftArm Toolbox 是面向连续体机械臂的符号建模、MATLAB 数值代码生成和
+Simulink 仿真工具箱。模型由 TOML 文件描述，工具链据此生成 MATLAB 数值函数、
+模型清单和 LaTeX 数学手册。
 
-## 模型
-
-- **PCC**：每段坐标为 `[bx, by, l]`。`bx/by` 是正交弯曲角分量，避免 `[theta,phi]` 在直线构型下的方位角奇异。支持沿材料坐标积分的 `distributed` 惯性和中点质量 `lumped` 惯性。
-- **Euler–Bernoulli Ritz**：每段坐标为 `[ax, ay]`，采用小挠度线性假设模态。配置必须显式给出两个归一化 Ritz 多项式；该模型不适合段内大斜率。
-
-两种软臂模型都可使用固定基或 ZYX 欧拉角浮动基。浮动基坐标
-`[base_x,base_y,base_z,base_roll,base_pitch,base_yaw]` 位于软臂坐标之前，无人机刚体、安装变换、软臂和末端负载由同一能量表达式装配，因此质量矩阵包含完整的基座—软臂耦合项。联合方程为
+核心动力学方程为
 
 $$
-M(q,p) \ddot{q} + h(q,\dot{q},p) = Q(q,\tau_a,w_B,w_e,p)
+M(q,p)\ddot q+h(q,\dot q,p)=Q(q,\tau_a,w_B,w_e,p),
 $$
 
-$\tau_a$ 是仅对应软臂自由度的抽象广义力；$w_B$ 是作用在无人机质心、在机体系表达的扳手；$w_e$ 是在 NED 世界系表达的末端扳手。`softarm_applied_force` 将三者统一映射到完整广义力。实际绳索或气动执行器通过独立的 `ActuatorMap` 映射到 $\tau_a$。
+其中 $q$ 为基座与软臂的联合广义坐标，$p$ 为有序运行时参数，
+$\tau_a$ 为软臂广义力，$w_B$ 为机体系基座扳手，$w_e$ 为 NED 世界系末端扳手。
 
-## 数理基础
+## 1. 工具箱概述
 
-### 符号与坐标约定
+### 1.1 模型族
+
+| 模型 | 单段坐标 | 运动学假设 | 惯性模型 |
+| --- | --- | --- | --- |
+| PCC | $[b_x,b_y,l]$ | 分段常曲率，可伸缩 | `distributed` 或 `lumped` |
+| Euler–Bernoulli Ritz | $[a_x,a_y]$ | 小挠度、小转角、不可伸缩 | 分布惯性 |
+
+两类模型均支持固定基座和 ZYX 欧拉角浮动基座。浮动基座坐标排列为
+
+```text
+[base_x, base_y, base_z, base_roll, base_pitch, base_yaw, arm...]
+```
+
+基座刚体、安装变换、软臂和末端负载统一装配到质量矩阵与偏置项中，
+从而保留基座—软臂动力学耦合。
+
+### 1.2 功能范围
+
+- PCC 与 Euler–Bernoulli Ritz 多段软臂建模
+- 固定基座与浮动基座联合动力学
+- 解析积分与 Gauss–Legendre 积分
+- 通用跨段绳索驱动与严格绳长加速度约束
+- 平面单点接触、摩擦反力和稳定化
+- MATLAB 数值函数、Simulink Model Reference 和 LaTeX 数学手册生成
+- 数值线性化与关键节点姿态回放
+
+### 1.3 运行环境
+
+仓库参考模型使用以下版本验证：
+
+```text
+Python                3.12.13
+MATLAB                R2025a
+MATLAB Engine         25.1.2
+Wolfram Mathematica   15.0.1
+```
+
+Wolfram 后端为可选组件；默认后端为 SymPy。
+
+## 2. 安装与快速开始
+
+### 2.1 安装
+
+```shell
+python -m pip install -r requirements.lock
+python -m pip install -e .
+```
+
+使用 Wolfram 后端时，可将 `.softarm.local.toml.example` 复制为
+`.softarm.local.toml`，并填写本机 Wolfram Kernel 路径；也可在构建命令中使用
+`--wolfram-kernel` 指定路径。
+
+### 2.2 验证、生成与检查
+
+```shell
+softarm validate examples/config/pcc_lumped_n2.toml
+softarm build examples/config/pcc_lumped_n2.toml \
+  --backend sympy \
+  --target matlab \
+  --out build/pcc
+softarm inspect build/pcc
+```
+
+Wolfram 表达式优化后端示例：
+
+```shell
+softarm build examples/config/pcc_distributed_n2.toml \
+  --backend wolfram \
+  --target matlab \
+  --out build/pcc-wolfram
+```
+
+生成目录包含：
+
+| 文件 | 内容 |
+| --- | --- |
+| `manifest.json` | 模型族、坐标、参数、执行器和约束元数据 |
+| `softarm_*.m` | MATLAB 数值函数 |
+| `softarm_model.tex` | 与当前模型对应的 LaTeX 数学手册 |
+
+## 3. 配置参考
+
+模型配置采用 TOML 格式。完整配置位于
+[`examples/config`](examples/config/)。
+
+| 配置节 | 用途 |
+| --- | --- |
+| `[model]` | 模型族、段数和 PCC 惯性类型 |
+| `[base]` | 固定或浮动基座及安装位姿 |
+| `[integration]` | 材料坐标积分方法与阶数 |
+| `[ritz]` | Euler 模型的归一化 Ritz 多项式 |
+| `[parameters]` | 几何、惯性、弹性、阻尼和载荷参数 |
+| `[actuation]` | 执行器族、通道及加速度模式 |
+| `[constraint]` | 接触或其他加速度级约束 |
+
+### 3.1 模型与积分
+
+PCC 示例：
+
+```toml
+[model]
+family = "pcc"
+segments = 2
+inertia = "lumped"
+
+[integration]
+method = "analytic"
+```
+
+`inertia` 可取 `distributed` 或 `lumped`。数值积分使用
+`method = "gauss"` 并设置正整数 `order`。
+
+Euler–Bernoulli Ritz 模型按
+
+$$
+\psi(\xi)=\sum_{k=0}^{m}c_k\xi^k
+$$
+
+配置两个弯曲平面的模态系数：
+
+```toml
+[model]
+family = "euler"
+segments = 2
+
+[ritz]
+x = [0.0, 0.0, 1.5, -0.5]
+y = [0.0, 0.0, 1.5, -0.5]
+```
+
+系数满足
+
+$$
+\psi(0)=\psi'(0)=0,\qquad \psi(1)=1.
+$$
+
+### 3.2 基座
+
+固定基座为默认模式。浮动基座配置如下：
+
+```toml
+[base]
+mode = "floating_rpy"
+mount_xyz = [0.0, 0.0, 0.0]
+mount_rpy = [0.0, 0.0, 0.0]
+```
+
+`mount_xyz` 和 `mount_rpy` 定义基座刚体到软臂根部的固定安装变换。
+
+### 3.3 绳索驱动
+
+绳索通道可跨越任意已声明的软臂段：
+
+```toml
+[actuation]
+family = "tendon"
+acceleration = "strict"
+
+[[actuation.channels]]
+name = "t1"
+kind = "unilateral"
+
+[[actuation.channels.spans]]
+section = 1
+radius = 0.0275
+angle = 0.0
+```
+
+`kind = "unilateral"` 表示非负拉力单绳；
+`kind = "signed"` 表示拮抗绳索对的有符号等效通道。
+
+`acceleration = "strict"` 生成绳长加速度约束求解器，适用于通道独立且
+通道数不超过软臂坐标数的配置。`acceleration = "none"` 生成力映射，
+适用于超驱动或相关通道组。
+
+### 3.4 平面单点接触
+
+```toml
+[constraint]
+family = "plane_point_contact"
+tool_offset = [0.0, 0.0, 0.0]
+plane_point = [0.0, 0.0, 0.45]
+plane_normal = [0.0, 0.0, -1.0]
+friction = 0.3
+friction_velocity = 0.01
+stabilization_frequency = 20.0
+stabilization_ratio = 1.0
+```
+
+`plane_normal` 指向自由空间。该约束描述持续接触阶段；法向乘子的可行性输出
+可用于上层接触状态管理。
+
+## 4. 生成模型参考
+
+### 4.1 模型清单
+
+`manifest.json` 定义生成模型的公共元数据：
+
+- `model`：模型族、段数和基座模式
+- `coordinates.base`、`coordinates.arm`：有序坐标名称
+- `parameters`：有序参数名称与默认值
+- `actuation`：执行器类型、模式和通道
+- `constraint`：约束类型和通道
+
+MATLAB 加载器按清单建立坐标维数、默认参数和可用函数句柄。
+
+### 4.2 MATLAB 数值函数
+
+所有生成包提供以下函数：
+
+```text
+softarm_mass(q,p)
+softarm_bias(q,dq,p)
+softarm_kinematics(q,p)
+softarm_end_jacobian(q,p)
+softarm_applied_force(q,tau_arm,w_vehicle,w_tip,p)
+softarm_forward_dynamics(q,dq,tau_arm,w_vehicle,w_tip,p)
+softarm_state_rhs(x,tau_arm,w_vehicle,w_tip,p)
+```
+
+配置包含执行器或约束时，生成包还会提供相应的
+`softarm_actuator_*` 或 `softarm_constraint_*` 函数。
+
+### 4.3 LaTeX 数学手册
+
+每次构建均生成 `softarm_model.tex`。文档依次给出模型摘要、符号与参数、
+运动学、能量与动力学、执行器和约束，并与同一生成包中的数值函数对应。
+
+附加精确符号表达式：
+
+```shell
+softarm build examples/config/euler_ritz_n2.toml \
+  --target matlab \
+  --out build/euler \
+  --tex-appendix
+```
+
+`--tex-appendix` 将 CAS 优化后的
+$V,D,M,h,H_e,J_e,B_v$ 及适用的执行器、约束表达式加入附录。
+
+生成 PDF：
+
+```shell
+cd build/euler
+pdflatex softarm_model.tex
+```
+
+TeX 文档依赖 `article`、`amsmath`、`amssymb`、`geometry` 和 `longtable`。
+
+## 5. MATLAB 接口
+
+```matlab
+addpath("matlab")
+plant = softarm.loadModel("examples/generated/pcc_lumped_n2");
+
+p = softarm.packParameters(plant.manifest, struct("s1_mass",0.25));
+q = [0;0;0.45;0;0;0.50];
+dq = zeros(6,1);
+
+ddq = plant.forwardDynamics( ...
+    q,dq,zeros(plant.narm,1),zeros(6,1),zeros(6,1),p);
+
+[A,Barm,Bvehicle,Btip] = softarm.linearize( ...
+    plant,[q;dq],zeros(plant.narm,1),zeros(6,1),zeros(6,1),p);
+```
+
+`softarm.loadModel` 返回的 `plant` 结构包含：
+
+| 字段 | 含义 |
+| --- | --- |
+| `manifest` | 模型清单 |
+| `nbase`、`narm`、`nq` | 基座、软臂和总坐标维数 |
+| `parameters` | 默认参数向量 |
+| `mass`、`bias`、`kinematics` | 核心模型函数 |
+| `endJacobian`、`appliedForce` | 末端 Jacobian 与外力映射 |
+| `forwardDynamics`、`stateRhs` | 前向动力学与状态方程 |
+| `actuation` | 执行器函数；由配置决定 |
+| `constraint` | 约束函数；由配置决定 |
+
+绳索驱动示例：
+
+```matlab
+plant = softarm.loadModel( ...
+    "examples/generated/pcc_three_tendon_extensible_n2");
+T = softarm.packActuatorInputs( ...
+    plant.actuation,struct("t1",2,"t2",1.5,"t3",1));
+[tau,isFeasible] = plant.actuation.force(q,T,plant.parameters);
+ddq = plant.forwardDynamics( ...
+    q,dq,tau,zeros(6,1),w,plant.parameters);
+```
+
+## 6. Simulink 模型
+
+| 模型 | 用途 |
+| --- | --- |
+| `softarm_plant.slx` | 无约束 Plant；输入软臂广义力、基座扳手和末端扳手 |
+| `softarm_constrained_plant.slx` | 约束 Plant；增加约束加速度并输出反力与可行性 |
+| `softarm_actuator_force_block.slx` | 绳索拉力到软臂广义力的 Model Reference |
+| `softarm_actuator_acceleration_block.slx` | 严格绳长加速度约束的 Model Reference |
+| `softarm_tendon_force_demo.slx` | 绳索拉力驱动示例 |
+| `softarm_tendon_acceleration_demo.slx` | 绳长加速度驱动示例 |
+| `softarm_flying_contact_demo.slx` | 浮动基座和平面单点接触示例 |
+
+Plant 模型的 `Bundle` System Mask 用于选择生成包，并据此配置基座、软臂、
+参数、执行器和约束维数。`backbone_poses` 端口按列堆叠每段末端的世界系
+$4\times4$ 齐次变换，输出维数为 $16N\times1$。
+
+在 Demo 的 `Plant` 块中，将 `Bundle directory` 设置为 MATLAB 字符串表达式，
+即可切换模型，例如：
+
+```matlab
+'examples/generated/euler_two_signed_pairs_n2'
+```
+
+### 6.1 姿态回放
+
+三个 Demo 将广义坐标记录到 `softarm_q_log`。仿真结束后运行：
+
+```matlab
+softarm_pose_playback
+```
+
+也可显式传入日志和生成包：
+
+```matlab
+softarm_pose_playback(softarm_q_log)
+softarm_pose_playback( ...
+    softarm_q_log,Bundle="examples/generated/euler_ritz_n2")
+```
+
+播放器显示世界原点、软臂中心线、段末节点和 RGB 姿态轴，并提供时间轴、
+播放控制和视角操作。输入可为 timeseries、timetable、structure-with-time、
+`Simulink.SimulationOutput` 或首列为时间的数值矩阵。
+
+## 7. 数理基础
+
+### 7.1 符号与坐标约定
 
 第 $i$ 段采用归一化材料坐标 $\xi\in[0,1]$，物理弧长坐标为
-$s=L_i\xi$。各段广义坐标按段依次拼接为 $q$，速度为
-$\dot q$。齐次变换
+$s=L_i\xi$。各段广义坐标按段依次拼接为 $q$，速度为 $\dot q$。齐次变换
 
 $$
 {}^0H_i(q,\xi)=
@@ -32,7 +364,8 @@ $$
 \end{bmatrix}
 $$
 
-把第 $i$ 段材料截面映射到 NED 基坐标系；多段模型由相邻段变换从基座到末端依次左乘得到。
+把第 $i$ 段材料截面映射到 NED 基坐标系；多段模型由相邻段变换从基座到
+末端依次左乘得到。
 
 材料点的线速度和角速度 Jacobian 定义为
 
@@ -45,14 +378,18 @@ J_{\omega,i}^{(:,j)}=
 \right)\right),
 $$
 
-其中 $\operatorname{skew}(A)=(A-A^T)/2$。线性 Euler 模型使用该式的一阶小转角形式。末端空间 Jacobian 为
+其中 $\operatorname{skew}(A)=(A-A^T)/2$。线性 Euler 模型采用该式的一阶
+小转角形式。末端空间 Jacobian 为
 
 $$
-J_e(q)=\begin{bmatrix}J_{v,e}\\J_{\omega,e}\end{bmatrix}
+J_e(q)=
+\begin{bmatrix}
+J_{v,e}\\J_{\omega,e}
+\end{bmatrix}
 \in\mathbb{R}^{6\times n_q}.
 $$
 
-### PCC 无奇异弯曲坐标与运动学
+### 7.2 PCC 运动学
 
 第 $i$ 段坐标为
 
@@ -61,8 +398,8 @@ q_i=[b_{x,i},\ b_{y,i},\ l_i]^T,\qquad
 \theta_i=\sqrt{b_{x,i}^2+b_{y,i}^2}.
 $$
 
-$b_x,b_y$ 是弯曲角的笛卡尔分量，因此直线构型由
-$(b_x,b_y)=(0,0)$ 唯一表示，不需要不可观的弯曲方位角。对任意截面 $\xi$，令
+$b_x,b_y$ 是弯曲角的笛卡尔分量，直线构型对应
+$(b_x,b_y)=(0,0)$。对任意截面 $\xi$，令
 
 $$
 x=\xi b_x,\qquad y=\xi b_y,\qquad \rho^2=x^2+y^2,
@@ -75,7 +412,7 @@ S(\rho^2)=\frac{\sin\rho}{\rho},\quad S(0)=1,\qquad
 C(\rho^2)=\frac{1-\cos\rho}{\rho^2},\quad C(0)=\frac12.
 $$
 
-单段 PCC 变换使用
+单段 PCC 变换为
 
 $$
 R(\xi)=
@@ -86,15 +423,17 @@ R(\xi)=
 \end{bmatrix},
 \qquad
 r(\xi)=l\xi
-\begin{bmatrix}xC\\yC\\S\end{bmatrix}.
+\begin{bmatrix}
+xC\\yC\\S
+\end{bmatrix}.
 $$
 
-`SincSqrt` 和 `CoscSqrt` 在 SymPy 中直接表示上述两个整函数，并提供解析的一、二阶导数。生成的 MATLAB 函数只在
-$|\rho^2|<10^{-8}$ 时切换到 Taylor 多项式；这不会修改 $q$，也不会在质量矩阵中加入人为正则项。
+该坐标在零曲率处具有唯一表示，并通过 $S$、$C$ 的解析延拓保持运动学及其
+导数的连续性。
 
-### Euler–Bernoulli Ritz 模型
+### 7.3 Euler–Bernoulli Ritz 运动学
 
-Euler 模型每段每个弯曲平面使用一个显式配置的 Ritz 模态：
+每段在两个弯曲平面分别使用一个 Ritz 模态：
 
 $$
 w_x(\xi)=a_x\psi_x(\xi),\qquad
@@ -129,29 +468,31 @@ R(\xi)\approx
 \end{bmatrix}.
 $$
 
-段间变换在拼接后严格截断到广义坐标的一阶：
+段间变换在拼接后截断到广义坐标的一阶：
 
 $$
 H_{\mathrm{lin}}(q)=H(0)+
-\sum_j\left.\frac{\partial H}{\partial q_j}\right|_{q=0}q_j.
+\sum_j
+\left.
+\frac{\partial H}{\partial q_j}
+\right|_{q=0}q_j.
 $$
 
-因此该模型是线性小挠度梁模型，不应被用于段内大斜率或大转角。若需要这类行为，应增加几何精确梁或
-Cosserat 模型，而不是在当前 Ritz 模型中混入部分高阶项。
-
-Euler 段的弯曲势能为
+该模型适用于小挠度、小斜率和小转角工况。Euler 段的弯曲势能为
 
 $$
-V_{e,i}=\frac12\frac{EI_{y,i}a_{x,i}^2}{L_i^3}
+V_{e,i}=
+\frac12\frac{EI_{y,i}a_{x,i}^2}{L_i^3}
 \int_0^1\left(\psi_x''\right)^2d\xi
-+\frac12\frac{EI_{x,i}a_{y,i}^2}{L_i^3}
++
+\frac12\frac{EI_{x,i}a_{y,i}^2}{L_i^3}
 \int_0^1\left(\psi_y''\right)^2d\xi.
 $$
 
-### 能量、质量矩阵与偏置力
+### 7.4 能量、质量矩阵与偏置力
 
-对于均匀分布惯性，配置中的 $m_i$ 和 $I_i$ 表示整段总质量和整段局部惯量；由于使用归一化材料坐标，
-$dm=m_i\,d\xi$。每段质量矩阵贡献为
+对于均匀分布惯性，$m_i$ 和 $I_i$ 表示整段总质量和整段局部惯量。
+归一化材料坐标下 $dm=m_i\,d\xi$，每段质量矩阵贡献为
 
 $$
 M_i(q)=\int_0^1\left[
@@ -160,8 +501,9 @@ m_iJ_{v,i}^TJ_{v,i}
 \right]d\xi.
 $$
 
-对线性 Euler 模型，为保持运动学一阶、能量二阶的一致截断，上式的惯量旋转取参考姿态
-${}^0R_i(0)$。PCC `lumped` 模式用 $\xi=1/2$ 处的同一表达式替代积分。末端负载贡献为
+线性 Euler 模型采用参考姿态 ${}^0R_i(0)$ 的惯量旋转，以保持运动学一阶、
+能量二阶的一致截断。PCC `lumped` 模式在 $\xi=1/2$ 处计算该段贡献。
+末端负载贡献为
 
 $$
 M_e=m_eJ_{v,e}^TJ_{v,e}
@@ -174,15 +516,13 @@ $$
 T(q,\dot q)=\frac12\dot q^TM(q)\dot q.
 $$
 
-NED 坐标系中重力沿 $+z$ 方向，故重力势能写为
+NED 坐标系中重力沿 $+z$ 方向，重力势能为
 
 $$
-V_g=-\sum_i m_i g\int_0^1 z_i(q,\xi)d\xi-m_egz_e(q).
+V_g=-\sum_i m_i g\int_0^1z_i(q,\xi)d\xi-m_egz_e(q).
 $$
 
-PCC `lumped` 模式相应地以 $-m_i g z_i(q,1/2)$ 代替该段的重力积分。
-
-PCC 的有效弹性势能为
+PCC `lumped` 模式的对应项为 $-m_i g z_i(q,1/2)$。PCC 的有效弹性势能为
 
 $$
 V_{e,i}^{\mathrm{PCC}}=
@@ -198,32 +538,43 @@ $$
 \frac{\partial\mathcal{R}}{\partial\dot q}=D\dot q.
 $$
 
-代码不显式构造非唯一的 Coriolis 矩阵 $C$，而是直接生成能量等价向量
+Coriolis 与离心项以能量等价向量表示：
 
 $$
 c(q,\dot q)=
 \frac{\partial(M\dot q)}{\partial q}\dot q
 -\frac12
-\left(\frac{\partial(\dot q^TM\dot q)}{\partial q}\right)^T.
+\left(
+\frac{\partial(\dot q^TM\dot q)}{\partial q}
+\right)^T.
 $$
 
-于是
+因此
 
 $$
 h(q,\dot q,p)=c(q,\dot q)+\nabla_qV(q,p)+D(p)\dot q,
 $$
 
 $$
-M(q,p)\ddot q+h(q,\dot q,p)=Q(q,\tau_a,w_B,w_e,p).
+M(q,p)\ddot q+h(q,\dot q,p)
+=Q(q,\tau_a,w_B,w_e,p).
 $$
 
-外力项来自虚功
+设 $S_a$ 为软臂坐标选择矩阵，$J_B$ 为基座刚体 Jacobian，
+$R_{WB}$ 为机体系到 NED 世界系的旋转，则
+
+$$
+Q=S_a\tau_a+B_v(q)w_B+J_e^Tw_e,\qquad
+B_v=J_B^T\operatorname{diag}(R_{WB},R_{WB}).
+$$
+
+外力项由虚功定义：
 
 $$
 \delta W=Q^T\delta q.
 $$
 
-状态取 $x=[q^T,\dot q^T]^T$，`softarm_state_rhs` 输出
+状态取 $x=[q^T,\dot q^T]^T$，状态方程为
 
 $$
 \dot x=
@@ -233,12 +584,13 @@ M^{-1}(Q-h)
 \end{bmatrix}.
 $$
 
-MATLAB 的 `softarm.linearize` 在给定工作点对该状态方程做中心差分，返回
-$A=\partial\dot x/\partial x$ 以及软臂、无人机扳手和末端扳手三组输入矩阵。
+`softarm.linearize` 在指定工作点对该状态方程进行中心差分，返回
+$A=\partial\dot x/\partial x$ 以及软臂广义力、基座扳手和末端扳手对应的
+输入矩阵。
 
-### 解析积分与显式数值积分
+### 7.5 材料坐标积分
 
-默认由所选 CAS 求解材料坐标上的解析积分。若配置显式选择 $n$ 阶 Gauss–Legendre 积分，则
+解析积分为默认策略。Gauss–Legendre 积分显式配置为 $n$ 阶时，
 
 $$
 \int_0^1f(\xi)d\xi\approx
@@ -246,271 +598,89 @@ $$
 f\!\left(\frac{\eta_k+1}{2}\right),
 $$
 
-其中 $(\eta_k,w_k)$ 是区间 $[-1,1]$ 上的 Gauss–Legendre 节点和权重。解析失败不会自动降级为数值积分。
+其中 $(\eta_k,w_k)$ 为区间 $[-1,1]$ 上的 Gauss–Legendre 节点和权重。
+构建过程严格采用配置指定的积分策略。
 
-## 环境与安装
-
-本仓库已在以下环境验证：
-
-```text
-Python  3.12.13
-MATLAB  R2025a / matlabengine 25.1.2
-Wolfram Mathematica 15.0.1
-```
-
-安装已锁定依赖：
-
-```shell
-python -m pip install -r requirements.lock
-python -m pip install -e .
-```
-
-复制 `.softarm.local.toml.example` 为 `.softarm.local.toml` 可覆盖本机工具路径；该文件不会提交。
-
-## 配置与生成
-
-参考配置位于 `examples/config/`。Euler Ritz 系数按
-`psi(xi)=sum(c[k]*xi^k)` 给出，必须满足 `c0=c1=0` 和 `sum(c)=1`。
-
-```shell
-softarm validate examples/config/pcc_lumped_n2.toml
-softarm build examples/config/pcc_lumped_n2.toml --backend sympy --target matlab --out build/pcc
-softarm build examples/config/pcc_distributed_n2.toml --backend wolfram --target matlab --out build/pcc-wolfram
-softarm inspect build/pcc
-```
-
-### LaTeX 数学文档
-
-每次 `softarm build` 都会在输出 bundle 中生成固定文件名
-`softarm_model.tex`。它是独立的英文 `article` 文档，与 MATLAB 代码共用同一个
-`SymbolicPlant`、`ActuationModel` 和 `ConstraintModel`，因此不是另一套手工维护的公式。
-正文按符号与参数、运动学、能量与动力学、执行器和约束分层组织；大型质量矩阵和偏置向量
-默认只以装配公式表示，适合人工核对并作为论文推导的起点。
-
-需要查看 CAS 生成的精确表达式时，使用：
-
-```shell
-softarm build examples/config/euler_ritz_n2.toml --target matlab --out build/euler --tex-appendix
-```
-
-`--tex-appendix` 会在同一文件末尾按输出块加入优化和 CSE 后的
-$V,D,M,h,H_e,J_e,B_v$，以及适用的执行器和约束表达式。大型浮动基模型的附录可能很长，
-普通构建和仓库内参考 bundle 因而不启用此选项。论文中建议引用正文的命名装配公式，并仅把
-精确附录作为模型复现或人工核验材料。
-
-本地生成 PDF：
-
-```shell
-cd build/euler
-pdflatex softarm_model.tex
-```
-
-该 TeX 仅依赖标准 `article`、`amsmath`、`amssymb`、`geometry` 和 `longtable`，
-不被 MATLAB loader 或 Simulink 消费，且不会改变 manifest。
-
-浮动基和平面接触可直接在同一 TOML 中声明；完整示例见
-`examples/config/pcc_flying_plane_contact_n1.toml`：
-
-```toml
-[base]
-mode = "floating_rpy"
-mount_xyz = [0.0, 0.0, 0.0]
-mount_rpy = [0.0, 0.0, 0.0]
-
-[parameters]
-vehicle_mass = 1.5
-vehicle_Ixx = 0.03
-vehicle_Iyy = 0.03
-vehicle_Izz = 0.05
-
-[constraint]
-family = "plane_point_contact"
-tool_offset = [0.0, 0.0, 0.0]
-plane_point = [0.0, 0.0, 0.45]
-plane_normal = [0.0, 0.0, -1.0]
-friction = 0.3
-friction_velocity = 0.01
-stabilization_frequency = 20.0
-stabilization_ratio = 1.0
-```
-
-平面法向指向自由空间。该接触实现假定约束已经激活，适用于持续贴合阶段；接近、冲击和脱离应由上层模式管理器根据间隙和反力可行性切换。
-
-解析积分是默认策略。若 CAS 无法完成，构建会失败；只有配置明确指定
-`method="gauss"` 和积分阶数时才会生成 Gauss–Legendre 求和表达式。
-
-生成包的 `manifest.json` 是唯一元数据源，包含 `model`、分组的 `coordinates.base/arm`、有序参数、执行器和约束描述。它不包含版本字段，也不兼容旧 manifest。固定 MATLAB 接口为：
-
-```text
-softarm_mass(q,p)
-softarm_bias(q,dq,p)
-softarm_kinematics(q,p)
-softarm_end_jacobian(q,p)
-softarm_applied_force(q,tau_arm,w_vehicle,w_tip,p)
-softarm_forward_dynamics(q,dq,tau_arm,w_vehicle,w_tip,p)
-softarm_state_rhs(x,tau_arm,w_vehicle,w_tip,p)
-```
-
-## 更新与增加数理模型
-
-### 修改现有模型
-
-1. 在 `src/softarm/geometry.py` 修改单段运动学，所有公式必须由 SymPy 对象构造；不要在 MATLAB 或 Wolfram 文件中复制一套公式。
-2. 在 `src/softarm/derive.py` 修改参数、能量或惯性装配。保持 `SymbolicPlant` 的公共结果为 `mass`、`potential`、`damping`、`kinematics` 和 `end_jacobian`；`bias` 会由统一能量公式生成。
-3. 在 `src/softarm/config.py` 增加必要的配置校验，并同步更新 `examples/config/`。结构参数进入 TOML；仿真中需要调节的物理参数应进入有序运行时参数向量 `p`。
-4. 若修改生成函数的固定签名或输出维度，同步更新 `src/softarm/codegen/matlab.py`、MATLAB 加载层和 `matlab/build_softarm_plant.m`；否则不需要手工编辑 SLX。
-5. 重新生成受影响的 `examples/generated/` 参考包，并运行 Python、MATLAB 和 Simulink 测试。
-
-### 增加新的几何/梁模型
-
-1. 编写一个接收 `ModelConfig`、返回 `SymbolicPlant` 的 builder。仓库内置模型加入 `derive.py` 的 `_MODEL_BUILDERS`；外部 Python 代码在调用 `derive` 前执行 `softarm.register_model(name, builder)`。当前 CLI 不自动发现外部插件，如需直接从 CLI 使用，还必须在 CLI 启动阶段显式导入注册模块。
-2. 优先复用 `derive.py` 中的通用能量装配思路；若新模型需要新的结构配置字段，应同时扩展 `ModelConfig` 和 TOML 解析，不能把结构常量隐藏在生成器中。
-3. 对模型的适用范围作明确选择，例如小挠度/大转角、可伸长/不可伸长、有剪切/无剪切；不要把不同阶次或互相矛盾的假设混入同一模型。
-4. 至少增加以下验证：零构型或参考构型、运动学有限差分、质量矩阵对称与名义正定、独立能量/积分计算、Coriolis 能量恒等式、外力虚功，以及 N=1/N=2 多段组合。
-
-### 增加特殊函数或 CAS 节点
-
-若新模型出现可去奇点或 SymPy/Wolfram/MATLAB 不能共同表示的函数：
-
-1. 在 `src/softarm/special.py` 定义 SymPy 函数、所需阶数的解析导数和独立数值实现。
-2. 在 `src/softarm/ast.py`、`src/softarm/backends/wolfram_bridge.wls` 和 MATLAB printer 中增加同一节点的往返与输出规则。
-3. 为奇点值、邻域连续性、导数和 SymPy/Wolfram/MATLAB 数值一致性增加测试；不得用修改状态变量的 epsilon 技巧代替解析延拓。
-
-### 增加执行器或约束
-
-基础 Plant 分别接收软臂广义力、无人机机体系扳手和末端世界系扳手。绳索、气腔或电机模型应实现 `ActuatorMap`，在 Plant 外部计算
-
-$$
-\tau_a=B(q_a,p_u)u
-$$
-
-加速度级约束通过 `ConstraintModel` 描述约束值、Jacobian、速度偏置、反力映射和稳定化参数：
-
-$$
-A(q,p_c)\ddot q+\dot A(q,\dot q,p_c)\dot q=b,\qquad Q_c=G(q,\dot q,p_c)\lambda.
-$$
-
-内置求解器使用无正则化 KKT 方程；理想约束取 $G=A^T$，非理想反力可提供独立的 $G$。`plane_point_contact` 示例生成单边法向约束，并用平滑库仑模型把滑动摩擦合入反力映射。求解器只处理已激活约束；负法向乘子通过可行性输出报告，不自动执行碰撞、接触或脱离切换。
-
-## 通用绳索驱动
-
-可在模型 TOML 中声明任意数量、任意跨段的绳索通道。`unilateral` 表示拉力必须非负的真实单绳；`signed` 表示一对拮抗绳索的理想差动通道，其等效拉力可正可负且不产生轴向作用。
-
-```toml
-[actuation]
-family = "tendon"
-acceleration = "strict" # 或 "none"
-
-[[actuation.channels]]
-name = "t1"
-kind = "unilateral"
-[[actuation.channels.spans]]
-section = 1
-radius = 0.0275
-angle = 0.0
-```
+### 7.6 绳索驱动
 
 第 $a$ 个 PCC 单绳通道的长度坐标为
 
 $$
 y_a=\sum_{i\in\mathcal P_a}\left[
-l_i-r_{ai}(b_{x,i}\cos\alpha_{ai}+b_{y,i}\sin\alpha_{ai})
+l_i-r_{ai}
+\left(
+b_{x,i}\cos\alpha_{ai}+b_{y,i}\sin\alpha_{ai}
+\right)
 \right].
 $$
 
-`signed` 通道去掉 $l_i$ 项，等价于相对截面中心对称布置的一对绳索的半差动长度。Euler 使用同一走线配置，但将弯曲项替换为 Ritz 端部斜率；Euler 本身仍不可轴向伸缩。
+`signed` 通道采用相对截面中心对称布置的拮抗绳索半差动长度，
+其轴向分量为零。Euler 通道使用 Ritz 端部斜率构造相应弯曲项。
 
-所有通道统一使用
+全部通道统一满足
 
 $$
-J_a=\frac{\partial y}{\partial q},\qquad
-\tau_a=-J_a^\top T.
+J_a=\frac{\partial y}{\partial q_a},\qquad
+\tau_a=-J_a^TT.
 $$
 
-`acceleration="strict"` 仅允许独立且不多于软臂坐标数的通道，并生成无正则化 KKT 求解器；`acceleration="none"` 只生成力映射，可用于超驱动或相关绳索组。半径作为有序运行时参数写入现有 `p`，通道名称与类型直接来自 manifest。
+严格绳长加速度通过完整系统 Jacobian $J_{a,f}=[0\;J_a]$ 施加：
 
-```matlab
-plant = softarm.loadModel("examples/generated/pcc_three_tendon_extensible_n2");
-T = softarm.packActuatorInputs(plant.actuation,struct("t1",2,"t2",1.5,"t3",1));
-[tau,isFeasible] = plant.actuation.force(q,T,plant.parameters);
-ddq = plant.forwardDynamics(q,dq,tau,zeros(6,1),w,plant.parameters);
-```
+$$
+\begin{bmatrix}
+M&J_{a,f}^T\\
+J_{a,f}&0
+\end{bmatrix}
+\begin{bmatrix}
+\ddot q\\T
+\end{bmatrix}
+=
+\begin{bmatrix}
+Q-h\\
+\ddot y_{\mathrm{cmd}}-\dot J_a\dot q_a
+\end{bmatrix}.
+$$
 
-三绳可伸缩、严格绳长加速度和 signed 等效配对示例见 `examples/actuation/README.md`。特殊滑轮或非标准长度公式通过 `softarm.register_actuator(name,builder)` 注册；builder 必须返回完全由 SymPy 表达式构成的 `ActuationModel`。
+### 7.7 加速度级约束
 
-## MATLAB 与 Simulink
+约束模型定义约束值、Jacobian、速度偏置、反力映射和稳定化参数：
 
-```matlab
-addpath("matlab")
-plant = softarm.loadModel("examples/generated/pcc_lumped_n2");
-p = softarm.packParameters(plant.manifest, struct("s1_mass",0.25));
-q = [0;0;0.45;0;0;0.50];
-dq = zeros(6,1);
-ddq = plant.forwardDynamics(q,dq,zeros(plant.narm,1),zeros(6,1),zeros(6,1),p);
-[A,Barm,Bvehicle,Btip] = softarm.linearize(plant,[q;dq],zeros(plant.narm,1),zeros(6,1),zeros(6,1),p);
-```
+$$
+A(q,p_c)\ddot q+\dot A(q,\dot q,p_c)\dot q=b,
+\qquad
+Q_c=G(q,\dot q,p_c)\lambda.
+$$
 
-`softarm_plant.slx` 是无约束底层 Plant，输入为 `tau_arm`、`vehicle_wrench` 和 `tip_wrench`。`softarm_constrained_plant.slx` 增加约束加速度输入，并输出反力、可行性和 KKT 条件诊断。两个模型都带 `Bundle` System Mask，切换 bundle 会自动更新基座、软臂、执行器、约束和参数维数。两者末尾的 `backbone_poses` 输出按列堆叠每段末端的世界系 `4×4` 齐次变换，因此维数为 `16N×1`；已有输出端口编号保持不变。
+理想约束取 $G=A^T$；一般反力模型可定义独立的 $G$。约束动力学采用
 
-模型可由 `matlab/build_softarm_plant.m` 完整重建，不需要手工编辑 SLX。
+$$
+\begin{bmatrix}
+M&-G\\
+A&0
+\end{bmatrix}
+\begin{bmatrix}
+\ddot q\\\lambda
+\end{bmatrix}
+=
+\begin{bmatrix}
+Q-h\\b-\dot A\dot q
+\end{bmatrix}.
+$$
 
-### 图形化绳索驱动
+`plane_point_contact` 使用单边法向约束，并以平滑库仑模型将切向摩擦合入
+反力映射。求解结果同时提供法向反力可行性和 KKT 条件诊断。
 
-以下模型可直接从文件浏览器打开，无需预先运行初始化脚本；回调会自动加载 `matlab/` 和默认的三绳可伸缩 PCC 包。
+## 8. 示例索引
 
-- `softarm_actuator_force_block.slx`：可复用拉力到广义力 Model Reference，输入 `q/tension`，输出 `tau/is_feasible`。
-- `softarm_actuator_acceleration_block.slx`：可复用严格绳长加速度 Model Reference，输出总 `tau`、约束拉力、可行性、约束条件数和 `ddq`。
-- `softarm_tendon_force_demo.slx`：已经把拉力驱动器与 Plant 串联；可设置拉力、无人机扳手和末端扳手。
-- `softarm_tendon_acceleration_demo.slx`：已经把严格加速度驱动器与 Plant 串联；可设置绳长加速度、附加软臂力和两类扳手。
-- `softarm_flying_contact_demo.slx`：浮动基 PCC 与平面单点摩擦约束示例；从已贴合状态开始。
+| 示例 | 配置与生成包 |
+| --- | --- |
+| 两段 PCC，中点集中惯性 | `pcc_lumped_n2` |
+| 两段 PCC，分布惯性 | `pcc_distributed_n2` |
+| 两段 Euler–Bernoulli Ritz | `euler_ritz_n2` |
+| 两段可伸缩 PCC，三绳驱动 | `pcc_three_tendon_extensible_n2` |
+| 两段 PCC，signed 绳索对 | `pcc_signed_pair_n2` |
+| 两段 Euler，两个 signed 绳索对 | `euler_two_signed_pairs_n2` |
+| 浮动基座 PCC，平面单点接触 | `pcc_flying_plane_contact_n1` |
 
-两个 Demo 的 `State scope` 显示 `q/dq`。反馈上的 Memory 块用于跨 Model Reference 打断 Simulink 的保守代数环判断。构建脚本为 `matlab/build_softarm_actuator_models.m`。
-
-### 关键节点姿态记录与离线回放
-
-三个 Demo（tendon force、tendon acceleration 和 flying contact）都在顶层直接用标准 `To Workspace` 记录 Plant 的 `q`，日志变量为基工作区中的 timeseries `softarm_q_log`。块的 `Sample time` 为 `-1`，继承输入信号采样时间，不会为了可视化日志强迫变步长求解器命中额外时间点。仿真期间不计算关键节点位姿、创建窗口或执行图形回调；Demo 也关闭了 Simulation Pacing。
-
-仿真完成后在 MATLAB 命令行运行：
-
-```matlab
-softarm_pose_playback
-```
-
-播放器根据工作区中的 `softarm_bundle` 离线调用运动学函数重建各帧位姿，然后显示世界原点、backbone、每段末端节点和 RGB 位姿轴。界面提供可拖动的时间进度条、播放/暂停和 `0.1×` 到 `2×` 播放速度；鼠标可旋转视角，工具栏可缩放和平移，NED `+z` 在窗口中朝下。也可以显式传入日志：
-
-```matlab
-softarm_pose_playback(softarm_q_log)
-```
-
-若日志来自另一个 bundle，可显式指定：
-
-```matlab
-softarm_pose_playback(softarm_q_log,Bundle="examples/generated/euler_ritz_n2")
-```
-
-播放器还接受包含 `softarm_q_log` 的 `Simulink.SimulationOutput`、structure-with-time、timetable 或第一列为时间的数值矩阵；旧的 `16N` 位姿日志仍可直接回放。它不需要 Simulink 3D Animation；运动学重建和绘图都发生在仿真结束之后。
-
-重新生成相关 SLX 时按以下顺序执行：
-
-```matlab
-build_softarm_plant
-build_softarm_constraint_models
-build_softarm_actuator_models
-```
-
-切换模型时，双击 Demo 中的 `Plant` 块，在 Mask 的 `Bundle directory` 中填写生成包路径并点击 Apply，例如：
-
-```matlab
-'examples/generated/euler_two_signed_pairs_n2'
-```
-
-这会在不更改连线的情况下，把三绳可伸缩 PCC 切换为 N=2 Euler + 两个 signed tendon pair；`q/dq` 从 6 维变为 4 维，tendon 输入从 3 维变为 2 维。该字段是 Simulink 模型参数表达式，因此字符串路径需要单引号。自建顶层模型时，引用 `softarm_plant` 的 Model block 会继承相同的 Mask。
-
-## 测试
-
-```shell
-python -m pytest
-matlab -batch "addpath('matlab'); r=runtests('matlab/tests'); assertSuccess(r)"
-```
-
-测试覆盖配置约束、PCC 零曲率的一二阶导数、浮动基质量耦合、Ritz 边界条件、通用绳索虚功/轴向模态、平面约束与摩擦耗散、新 manifest、MATLAB 参考包、数值线性化及 Simulink 短时运行。
+MATLAB 绳索驱动脚本见
+[`examples/actuation`](examples/actuation/)。
