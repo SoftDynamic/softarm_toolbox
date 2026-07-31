@@ -454,13 +454,13 @@ $$
 $$
 J_{v,i}=\frac{\partial\,{}^0r_i}{\partial q},\qquad
 J_{\omega,i}^{(:,j)}=
-\operatorname{vex}\!\left(
-\operatorname{skew}\!\left(
+\mathrm{vex}\!\left(
+\mathrm{skew}\!\left(
 \frac{\partial\,{}^0R_i}{\partial q_j}\,{}^0R_i^T
 \right)\right),
 $$
 
-其中 $\operatorname{skew}(A)=(A-A^T)/2$。线性 Euler 模型采用该式的一阶
+其中 $\mathrm{skew}(A)=(A-A^T)/2$。线性 Euler 模型采用该式的一阶
 小转角形式。末端空间 Jacobian 为
 
 $$
@@ -604,7 +604,7 @@ $$
 
 $$
 V_{e,i}=\frac{L_i}{2}\delta\xi_i^T
-\operatorname{diag}(EI_x,EI_y,GJ,GA_x,GA_y,EA)\delta\xi_i.
+\mathrm{diag}(EI_x,EI_y,GJ,GA_x,GA_y,EA)\delta\xi_i.
 $$
 
 ### 7.5 能量、质量矩阵与偏置力
@@ -683,7 +683,7 @@ $R_{WB}$ 为机体系到 NED 世界系的旋转，则
 
 $$
 Q=S_a\tau_a+B_v(q)w_B+J_e^Tw_e,\qquad
-B_v=J_B^T\operatorname{diag}(R_{WB},R_{WB}).
+B_v=J_B^T\mathrm{diag}(R_{WB},R_{WB}).
 $$
 
 外力项由虚功定义：
