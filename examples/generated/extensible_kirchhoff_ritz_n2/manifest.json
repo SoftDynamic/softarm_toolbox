@@ -3,7 +3,17 @@
     "rod": "extensible_kirchhoff",
     "parameterization": "ritz",
     "segments": 2,
-    "base_mode": "fixed"
+    "base_mode": "fixed",
+    "mount_xyz": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "mount_rpy": [
+      0.0,
+      0.0,
+      0.0
+    ]
   },
   "coordinates": {
     "base": [],

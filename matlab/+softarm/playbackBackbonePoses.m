@@ -10,15 +10,14 @@ end
 if isempty(logData)
     if evalin("base","exist('softarm_q_log','var')") == 1
         logData = evalin("base","softarm_q_log");
-    elseif evalin("base","exist('softarm_backbone_log','var')") == 1
-        logData = evalin("base","softarm_backbone_log");
     else
-        error("softarm:MissingPoseLog", ...
-            "Neither softarm_q_log nor softarm_backbone_log is present in the base workspace.");
+        error("softarm:MissingQLog", ...
+            "softarm_q_log is not present in the base workspace.");
     end
 end
-[time,loggedFrames] = normalizeLog(logData);
-poseFrames = reconstructPoses(loggedFrames,options.Bundle);
+[time,qFrames] = normalizeLog(logData);
+plant = loadPlaybackPlant(options.Bundle);
+poseFrames = softarm.reconstructBackbonePoses(qFrames,plant);
 frameCount = numel(time);
 axisLength = options.AxisLength;
 
@@ -45,13 +44,19 @@ enableDefaultInteractivity(axesHandle);
 
 backbone = line(axesHandle,nan,nan,nan, ...
     "Color",[0.12 0.12 0.12],"LineWidth",2.0, ...
-    "Marker","o","MarkerSize",5,"MarkerFaceColor",[0.85 0.85 0.85]);
+    "Marker","o","MarkerSize",5,"MarkerFaceColor",[0.85 0.85 0.85], ...
+    "Tag","softarm_backbone");
+line(axesHandle,0,0,0,"LineStyle","none","Marker","+", ...
+    "MarkerSize",8,"Color",[0.35 0.35 0.35],"Tag","softarm_world_origin");
 xAxis = quiver3(axesHandle,nan,nan,nan,nan,nan,nan,0, ...
-    "Color",[0.88 0.10 0.10],"LineWidth",1.4,"MaxHeadSize",0.45);
+    "Color",[0.88 0.10 0.10],"LineWidth",1.4,"MaxHeadSize",0.45, ...
+    "Tag","softarm_x_axes");
 yAxis = quiver3(axesHandle,nan,nan,nan,nan,nan,nan,0, ...
-    "Color",[0.10 0.62 0.18],"LineWidth",1.4,"MaxHeadSize",0.45);
+    "Color",[0.10 0.62 0.18],"LineWidth",1.4,"MaxHeadSize",0.45, ...
+    "Tag","softarm_y_axes");
 zAxis = quiver3(axesHandle,nan,nan,nan,nan,nan,nan,0, ...
-    "Color",[0.12 0.30 0.90],"LineWidth",1.4,"MaxHeadSize",0.45);
+    "Color",[0.12 0.30 0.90],"LineWidth",1.4,"MaxHeadSize",0.45, ...
+    "Tag","softarm_z_axes");
 
 playButton = uibutton(layout,"push","Text","Play");
 playButton.Layout.Row = 2;
@@ -140,14 +145,14 @@ renderFrame(1);
         nodeCount = numel(transformStack)/16;
         transforms = reshape(transformStack,4,4,nodeCount);
         positions = reshape(transforms(1:3,4,:),3,nodeCount).';
-        bases = [zeros(1,3);positions];
-        xDirections = [1 0 0;reshape(transforms(1:3,1,:),3,nodeCount).'];
-        yDirections = [0 1 0;reshape(transforms(1:3,2,:),3,nodeCount).'];
-        zDirections = [0 0 1;reshape(transforms(1:3,3,:),3,nodeCount).'];
-        set(backbone,"XData",bases(:,1),"YData",bases(:,2),"ZData",bases(:,3));
-        setQuiver(xAxis,bases,axisLength*xDirections);
-        setQuiver(yAxis,bases,axisLength*yDirections);
-        setQuiver(zAxis,bases,axisLength*zDirections);
+        xDirections = reshape(transforms(1:3,1,:),3,nodeCount).';
+        yDirections = reshape(transforms(1:3,2,:),3,nodeCount).';
+        zDirections = reshape(transforms(1:3,3,:),3,nodeCount).';
+        set(backbone,"XData",positions(:,1),"YData",positions(:,2), ...
+            "ZData",positions(:,3));
+        setQuiver(xAxis,positions,axisLength*xDirections);
+        setQuiver(yAxis,positions,axisLength*yDirections);
+        setQuiver(zAxis,positions,axisLength*zDirections);
         timeSlider.Value = time(frame);
         timeLabel.Text = sprintf("t = %.3f / %.3f s",time(frame),time(end));
         titleHandle.String = sprintf("Soft-arm key-node poses   frame %d / %d", ...
@@ -169,12 +174,8 @@ if isa(logData,"Simulink.SimulationOutput")
     try
         logData = logData.get("softarm_q_log");
     catch
-        try
-            logData = logData.get("softarm_backbone_log");
-        catch
-            error("softarm:MissingPoseLog", ...
-                "SimulationOutput contains neither softarm_q_log nor softarm_backbone_log.");
-        end
+        error("softarm:MissingQLog", ...
+            "SimulationOutput does not contain softarm_q_log.");
     end
 end
 
@@ -192,27 +193,21 @@ elseif isnumeric(logData) && ismatrix(logData) && size(logData,2) > 1
     time = double(logData(:,1));
     poseFrames = double(logData(:,2:end));
 else
-    error("softarm:InvalidPoseLog","Unsupported pose log format.");
+    error("softarm:InvalidQLog","Unsupported q log format.");
 end
 
 if isempty(time) || any(~isfinite(time)) || any(diff(time) < 0)
-    error("softarm:InvalidPoseLog","Pose log time must be finite and nondecreasing.");
+    error("softarm:InvalidQLog","Q log time must be finite and nondecreasing.");
 end
 if size(poseFrames,1) ~= numel(time) || isempty(poseFrames)
-    error("softarm:InvalidPoseLog", ...
+    error("softarm:InvalidQLog", ...
         "Logged data dimensions do not match the time vector.");
 end
 [time,indices] = unique(time,"stable");
 poseFrames = poseFrames(indices,:);
 end
 
-function poseFrames = reconstructPoses(loggedFrames,bundle)
-% A multiple of 16 is already a stack of homogeneous transforms.
-if size(loggedFrames,2) >= 16 && rem(size(loggedFrames,2),16) == 0
-    poseFrames = loggedFrames;
-    return
-end
-
+function plant = loadPlaybackPlant(bundle)
 if bundle == ""
     if evalin("base","exist('softarm_bundle','var')") ~= 1
         error("softarm:MissingBundle", ...
@@ -221,17 +216,6 @@ if bundle == ""
     bundle = string(evalin("base","softarm_bundle"));
 end
 plant = softarm.loadModel(bundle);
-if size(loggedFrames,2) ~= plant.nq
-    error("softarm:InvalidPoseLog", ...
-        "The q log width (%d) does not match bundle nq (%d).", ...
-        size(loggedFrames,2),plant.nq);
-end
-segmentCount = plant.manifest.model.segments;
-poseFrames = zeros(size(loggedFrames,1),16*segmentCount);
-for frame = 1:size(loggedFrames,1)
-    transforms = plant.kinematics(loggedFrames(frame,:).',plant.parameters);
-    poseFrames(frame,:) = transforms(:).';
-end
 end
 
 function frames = timeFirst(data,timeCount)
@@ -244,7 +228,7 @@ elseif size(data,ndims(data)) == timeCount
 elseif rem(numel(data),timeCount) == 0
     frames = reshape(data,[],timeCount).';
 else
-    error("softarm:InvalidPoseLog","Pose data dimensions do not match its time vector.");
+    error("softarm:InvalidQLog","Q data dimensions do not match its time vector.");
 end
 end
 
@@ -265,7 +249,6 @@ for frame = 1:frameCount
     rows = (frame-1)*nodeCount+(1:nodeCount);
     positions(rows,:) = reshape(transforms(1:3,4,:),3,nodeCount).';
 end
-positions = [zeros(1,3);positions];
 minimum = min(positions,[],1);
 maximum = max(positions,[],1);
 span = max(maximum-minimum);

@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import sympy as sp
@@ -8,6 +9,7 @@ from softarm.backends.protocol import decode_dag, encode_dag
 from softarm.codegen import generate_matlab_bundle
 from softarm.config import (
     ActuationConfig,
+    BaseConfig,
     ConstraintConfig,
     IntegrationConfig,
     ModelConfig,
@@ -52,6 +54,9 @@ def test_minimal_manifest_and_fixed_functions(tmp_path):
     assert manifest["coordinates"]["base"] == []
     assert manifest["model"]["rod"] == "euler_bernoulli"
     assert manifest["model"]["parameterization"] == "ritz"
+    assert manifest["model"]["base_mode"] == "fixed"
+    assert manifest["model"]["mount_xyz"] == [0.0, 0.0, 0.0]
+    assert manifest["model"]["mount_rpy"] == [0.0, 0.0, 0.0]
     assert len(manifest["coordinates"]["arm"]) == 2
     for filename in (
         "softarm_mass.m", "softarm_bias.m", "softarm_kinematics.m",
@@ -64,6 +69,22 @@ def test_minimal_manifest_and_fixed_functions(tmp_path):
     assert r"\begin{document}" in document
     assert document.endswith("\\end{document}\n")
     assert "Exact Symbolic Appendix" not in document
+
+
+def test_manifest_preserves_nonzero_base_mount(tmp_path):
+    plant = _small_plant()
+    plant.config = replace(
+        plant.config,
+        base=BaseConfig(
+            mode="fixed",
+            mount_xyz=(0.12, -0.23, 0.34),
+            mount_rpy=(0.41, -0.32, 0.13),
+        ),
+    )
+    generate_matlab_bundle(plant, tmp_path)
+    model = json.loads((tmp_path / "manifest.json").read_text())["model"]
+    assert model["mount_xyz"] == [0.12, -0.23, 0.34]
+    assert model["mount_rpy"] == [0.41, -0.32, 0.13]
 
 
 def test_actuated_bundle_keeps_minimal_manifest_and_generic_functions(tmp_path):

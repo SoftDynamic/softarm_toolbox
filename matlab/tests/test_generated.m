@@ -94,6 +94,61 @@ verifyError(testCase,@() softarm.poseStackToAero(zeros(15,1)), ...
     "softarm:InvalidBackbonePoses");
 end
 
+function testReconstructBackbonePoses(testCase)
+mountXYZ = [0.12 -0.23 0.34];
+mountRPY = [0.41 -0.32 0.13];
+floating = syntheticPlaybackPlant("floating_rpy",mountXYZ,mountRPY,16,6);
+qFrames = zeros(2,16);
+qFrames(1,1:6) = [1.1 -2.2 3.3 0.21 -0.31 0.42];
+qFrames(2,1:6) = [-0.4 0.5 -0.6 -0.12 0.23 -0.34];
+poses = softarm.reconstructBackbonePoses(qFrames,floating);
+verifySize(testCase,poses,[2 32]);
+for frame = 1:2
+    transforms = reshape(poses(frame,:),4,4,2);
+    expectedRoot = transformZYX(qFrames(frame,1:3),qFrames(frame,4:6))* ...
+        transformZYX(mountXYZ,mountRPY);
+    verifyEqual(testCase,transforms(:,:,1),expectedRoot,"AbsTol",1e-12);
+    verifyEqual(testCase,transforms(:,:,2),eye(4),"AbsTol",1e-12);
+end
+
+fixed = syntheticPlaybackPlant("fixed",mountXYZ,mountRPY,2,0);
+fixedPoses = softarm.reconstructBackbonePoses([0.1 0.2],fixed);
+fixedTransforms = reshape(fixedPoses,4,4,2);
+verifyEqual(testCase,fixedTransforms(:,:,1), ...
+    transformZYX(mountXYZ,mountRPY),"AbsTol",1e-12);
+
+verifyError(testCase,@() softarm.reconstructBackbonePoses(zeros(1,15),floating), ...
+    "softarm:InvalidQFrames");
+legacy = floating;
+legacy.manifest.model = rmfield(legacy.manifest.model,"mount_xyz");
+verifyError(testCase,@() softarm.reconstructBackbonePoses(qFrames,legacy), ...
+    "softarm:MissingBaseMetadata");
+end
+
+function testFloatingBundleBackboneRoot(testCase)
+root = testCase.TestData.root;
+plant = softarm.loadModel(fullfile(root,"examples","generated", ...
+    "extensible_kirchhoff_pcs_flying_plane_contact_n1"));
+q = zeros(1,plant.nq);
+q(1:6) = [1.1 -2.2 3.3 0.21 -0.31 0.42];
+lengthIndex = find(strcmp({plant.manifest.parameters.name},"s1_rest_length"),1);
+q(plant.nbase+3) = plant.parameters(lengthIndex);
+poses = softarm.reconstructBackbonePoses(q,plant);
+transforms = reshape(poses,4,4,plant.manifest.model.segments+1);
+verifyEqual(testCase,transforms(:,:,1), ...
+    transformZYX(q(1:3),q(4:6)),"AbsTol",1e-12);
+verifyEqual(testCase,transforms(:,:,2:end), ...
+    plant.kinematics(q.',plant.parameters),"AbsTol",1e-12);
+end
+
+function testPlaybackRejectsPoseStack(testCase)
+bundle = fullfile(testCase.TestData.root,"examples","generated", ...
+    "extensible_kirchhoff_pcs_flying_plane_contact_n1");
+legacyPoseLog = [0 zeros(1,16)];
+verifyError(testCase,@() softarm.playbackBackbonePoses( ...
+    legacyPoseLog,Bundle=string(bundle)),"softarm:InvalidQFrames");
+end
+
 function testGeneratedPoseStacks(testCase)
 root = testCase.TestData.root;
 names = ["extensible_kirchhoff_pcs_three_tendon_n2","euler_bernoulli_ritz_n2"];
@@ -252,6 +307,12 @@ cleanupContact = onCleanup(@() close_system( ...
 verifyQLog(testCase,"softarm_flying_contact_demo","Constrained Plant");
 verifyEqual(testCase,get_param( ...
     "softarm_flying_contact_demo","ReturnWorkspaceOutputs"),'off');
+contactInit = string(get_param("softarm_flying_contact_demo","InitFcn"));
+verifyTrue(testCase,contains(contactInit, ...
+    "softarm_root=fileparts(fileparts(softarm_model_dir))"));
+verifyFalse(testCase,contains(contactInit, ...
+    "softarm_root=fileparts(get_param(bdroot,'FileName'))"));
+set_param("softarm_flying_contact_demo","SimulationCommand","update");
 verifyFalse(testCase,isfile(fullfile(root,"softarm_visualization_lib.slx")));
 end
 
@@ -283,6 +344,21 @@ rotation = [ ...
     cz*cy, cz*sy*sx-sz*cx, cz*sy*cx+sz*sx; ...
     sz*cy, sz*sy*sx+cz*cx, sz*sy*cx-cz*sx; ...
     -sy, cy*sx, cy*cx];
+end
+
+function transform = transformZYX(position,angles)
+transform = [rotationZYX(angles),reshape(position,3,1);0,0,0,1];
+end
+
+function plant = syntheticPlaybackPlant(mode,mountXYZ,mountRPY,nq,nbase)
+model = struct("base_mode",mode,"segments",1, ...
+    "mount_xyz",mountXYZ,"mount_rpy",mountRPY);
+plant = struct("nq",nq,"nbase",nbase,"parameters",zeros(0,1), ...
+    "manifest",struct("model",model),"kinematics",@identityKinematics);
+end
+
+function transforms = identityKinematics(~,~)
+transforms = eye(4);
 end
 
 function names = rootOutports(model)

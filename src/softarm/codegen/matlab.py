@@ -179,6 +179,8 @@ def generate_matlab_bundle(
             "parameterization": plant.config.parameterization,
             "segments": plant.config.segments,
             "base_mode": plant.config.base.mode,
+            "mount_xyz": plant.config.base.mount_xyz,
+            "mount_rpy": plant.config.base.mount_rpy,
         },
         "coordinates": {
             "base": plant.base_coordinate_names,

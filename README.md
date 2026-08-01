@@ -292,7 +292,7 @@ stabilization_ratio = 1.0
 
 `manifest.json` 定义生成模型的公共元数据：
 
-- `model`：Rod 理论、空间参数化、段数和基座模式
+- `model`：Rod 理论、空间参数化、段数、基座模式和固定安装变换
 - `coordinates.base`、`coordinates.arm`：有序坐标名称
 - `parameters`：有序参数名称与默认值
 - `actuation`：执行器类型、模式和通道
@@ -429,9 +429,12 @@ softarm_pose_playback( ...
     softarm_q_log,Bundle="examples/generated/euler_bernoulli_ritz_n2")
 ```
 
-播放器显示世界原点、软臂中心线、段末节点和 RGB 姿态轴，并提供时间轴、
-播放控制和视角操作。输入可为 timeseries、timetable、structure-with-time、
-`Simulink.SimulationOutput` 或首列为时间的数值矩阵。
+播放器根据 `q` 和生成包中的基座安装元数据重建软臂安装根与各段末端的世界系
+位姿。中心线从真实安装根开始，世界原点作为独立标记；浮动基座运动或安装变换
+非零时，根节点和 RGB 姿态轴会随之正确移动。输入必须是广义坐标日志，可采用
+timeseries、timetable、structure-with-time、包含 `softarm_q_log` 的
+`Simulink.SimulationOutput`，或首列为时间的数值矩阵。仅含段末端变换的
+`backbone_poses` 日志不能用于离线回放。
 
 ## 7. 数理基础
 
