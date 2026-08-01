@@ -55,6 +55,8 @@ class SymbolicPlant:
     base_jacobian: sp.Matrix
     vehicle_wrench_map: sp.Matrix
     arm_force_map: sp.Matrix
+    _material_coordinate: sp.Symbol | None = None
+    _material_kinematics: sp.Matrix | None = None
     _bias: sp.Matrix | None = None
 
     @property
@@ -224,6 +226,7 @@ def _derive_common(
     )
     base = base_transform * mount
     transforms: list[sp.Matrix] = []
+    material_transforms: list[sp.Matrix] = []
     xi = sp.Symbol("xi", real=True, nonnegative=True)
 
     for section in range(config.segments):
@@ -232,6 +235,11 @@ def _derive_common(
         if linear_kinematics:
             end = _linearize_matrix(end, arm_q)
         transforms.append(end)
+
+        material_transform = base * local_transform(section, xi)
+        if linear_kinematics:
+            material_transform = _linearize_matrix(material_transform, arm_q)
+        material_transforms.append(material_transform)
 
         if distributed:
             if config.integration.method == "gauss":
@@ -300,6 +308,7 @@ def _derive_common(
     potential -= tip_mass * gravity * end_position[2]
 
     kinematics = sp.Matrix.hstack(*transforms)
+    material_kinematics = sp.Matrix.hstack(*material_transforms)
     end_jacobian = jv_end.col_join(jw_end)
     base_position = base_transform[:3, 3]
     base_rotation = base_transform[:3, :3]
@@ -321,6 +330,7 @@ def _derive_common(
         tuple(parameters.items), mass_matrix, potential, sp.diag(*full_damping),
         kinematics, end_jacobian, base_transform, base, base_jacobian,
         vehicle_wrench_map, arm_force_map,
+        _material_coordinate=xi, _material_kinematics=material_kinematics,
     )
 
 

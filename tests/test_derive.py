@@ -43,6 +43,66 @@ def _numeric(matrix, plant, q):
     return np.asarray(fn(np.asarray(q), p), dtype=float)
 
 
+@pytest.mark.parametrize("config_name", [
+    "euler_bernoulli_ritz_n2.toml",
+    "euler_bernoulli_pcs_n2.toml",
+    "extensible_kirchhoff_ritz_n2.toml",
+    "extensible_kirchhoff_pcs_lumped_n2.toml",
+    "cosserat_pcs_lumped_n1.toml",
+])
+def test_material_kinematics_matches_section_ends(config_name):
+    plant = derive(load_config(ROOT / "examples/config" / config_name))
+    assert plant._material_coordinate is not None
+    assert plant._material_kinematics is not None
+    q = np.linspace(0.01, 0.02, len(plant.q))
+    p = np.array([item.default for item in plant.parameters])
+    evaluate_material = sp.lambdify(
+        (plant.q, plant.p, plant._material_coordinate),
+        plant._material_kinematics,
+        [LAMBDA_MODULES, "numpy"],
+    )
+    material = np.asarray(evaluate_material(q, p, 0.37), dtype=float)
+    material_end = np.asarray(evaluate_material(q, p, 1.0), dtype=float)
+    endpoint = _numeric(plant.kinematics, plant, q)
+    assert np.isfinite(material).all()
+    np.testing.assert_allclose(material_end, endpoint, rtol=1e-11, atol=1e-12)
+
+
+def test_material_kinematics_respects_floating_base_and_mount():
+    mount_xyz = (0.12, -0.23, 0.34)
+    mount_rpy = (0.17, -0.11, 0.08)
+    plant = derive(ModelConfig(
+        rod="extensible_kirchhoff", parameterization="pcs", segments=1,
+        inertia="lumped", integration=IntegrationConfig(),
+        base=BaseConfig("floating_rpy", mount_xyz, mount_rpy),
+    ))
+    q = np.array([1.1, -2.2, 3.3, 0.21, -0.31, 0.42, 0.0, 0.0, 0.5])
+    p = np.array([item.default for item in plant.parameters])
+    evaluate = sp.lambdify(
+        (plant.q, plant.p, plant._material_coordinate),
+        plant._material_kinematics,
+        [LAMBDA_MODULES, "numpy"],
+    )
+    actual = np.asarray(evaluate(q, p, 0.4), dtype=float)[:3, 3]
+
+    def rotation(rpy):
+        roll, pitch, yaw = rpy
+        cx, sx = np.cos(roll), np.sin(roll)
+        cy, sy = np.cos(pitch), np.sin(pitch)
+        cz, sz = np.cos(yaw), np.sin(yaw)
+        return np.array([
+            [cz * cy, cz * sy * sx - sz * cx, cz * sy * cx + sz * sx],
+            [sz * cy, sz * sy * sx + cz * cx, sz * sy * cx - cz * sx],
+            [-sy, cy * sx, cy * cx],
+        ])
+
+    base_rotation = rotation(q[3:6])
+    expected = q[:3] + base_rotation @ (
+        np.asarray(mount_xyz) + rotation(mount_rpy) @ np.array([0.0, 0.0, 0.2])
+    )
+    np.testing.assert_allclose(actual, expected, rtol=1e-11, atol=1e-12)
+
+
 def test_lumped_extensible_kirchhoff_pcs_mass_is_symmetric_and_finite():
     plant = derive(load_config(ROOT / "examples/config/extensible_kirchhoff_pcs_lumped_n2.toml"))
     q = [0.08, -0.04, 0.46, -0.03, 0.06, 0.51]

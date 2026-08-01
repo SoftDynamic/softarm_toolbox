@@ -57,9 +57,11 @@ def test_minimal_manifest_and_fixed_functions(tmp_path):
     assert manifest["model"]["base_mode"] == "fixed"
     assert manifest["model"]["mount_xyz"] == [0.0, 0.0, 0.0]
     assert manifest["model"]["mount_rpy"] == [0.0, 0.0, 0.0]
+    assert manifest["model"]["centerline"] is True
     assert len(manifest["coordinates"]["arm"]) == 2
     for filename in (
         "softarm_mass.m", "softarm_bias.m", "softarm_kinematics.m",
+        "softarm_centerline.m", "softarm_centerline_at.m",
         "softarm_end_jacobian.m", "softarm_applied_force.m",
         "softarm_forward_dynamics.m", "softarm_state_rhs.m", "softarm_model.tex",
     ):
@@ -69,6 +71,18 @@ def test_minimal_manifest_and_fixed_functions(tmp_path):
     assert r"\begin{document}" in document
     assert document.endswith("\\end{document}\n")
     assert "Exact Symbolic Appendix" not in document
+
+
+def test_bundle_without_material_kinematics_omits_centerline(tmp_path):
+    plant = _small_plant()
+    generate_matlab_bundle(plant, tmp_path)
+    plant._material_coordinate = None
+    plant._material_kinematics = None
+    generate_matlab_bundle(plant, tmp_path)
+    model = json.loads((tmp_path / "manifest.json").read_text())["model"]
+    assert model["centerline"] is False
+    assert not (tmp_path / "softarm_centerline.m").exists()
+    assert not (tmp_path / "softarm_centerline_at.m").exists()
 
 
 def test_manifest_preserves_nonzero_base_mount(tmp_path):

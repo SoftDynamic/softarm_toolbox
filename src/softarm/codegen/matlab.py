@@ -75,6 +75,55 @@ def render_function(
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def generate_centerline_matlab(
+    plant: SymbolicPlant,
+    target: Path,
+    loads: list[str],
+    optimizer: FunctionOptimizer,
+) -> bool:
+    scalar_path = target / "softarm_centerline_at.m"
+    wrapper_path = target / "softarm_centerline.m"
+    if plant._material_coordinate is None or plant._material_kinematics is None:
+        scalar_path.unlink(missing_ok=True)
+        wrapper_path.unlink(missing_ok=True)
+        return False
+
+    positions = sp.Matrix.hstack(*(
+        plant._material_kinematics[:3, 4 * section + 3]
+        for section in range(plant.config.segments)
+    ))
+    render_function(
+        scalar_path,
+        "softarm_centerline_at",
+        "P",
+        positions,
+        positions.shape,
+        ["q", "p", str(plant._material_coordinate)],
+        loads,
+        optimizer,
+    )
+    segment_count = plant.config.segments
+    wrapper_path.write_text(
+        (
+            "function P = softarm_centerline(q,p,xi)\n"
+            "%SOFTARM_CENTERLINE Sample model-derived section centerlines.\n"
+            "xi=double(xi(:).');\n"
+            "assert(~isempty(xi)&&all(isfinite(xi))&&all(xi>=0)&&all(xi<=1),"
+            "'softarm:InvalidMaterialCoordinate','xi must be finite and lie in [0,1].');\n"
+            f"P=zeros(3,{segment_count}*numel(xi));\n"
+            "for sample=1:numel(xi)\n"
+            "    sectionPoints=softarm_centerline_at(q,p,xi(sample));\n"
+            f"    for section=1:{segment_count}\n"
+            "        P(:,(section-1)*numel(xi)+sample)=sectionPoints(:,section);\n"
+            "    end\n"
+            "end\n"
+            "end\n"
+        ),
+        encoding="utf-8",
+    )
+    return True
+
+
 _HELPERS = {
     "softarm_sinc_sqrt.m": """function y = softarm_sinc_sqrt(z)\n%#codegen\nif abs(z)<1e-8, y=1-z/6+z^2/120-z^3/5040+z^4/362880; else, s=sqrt(z); y=sin(s)/s; end\nend\n""",
     "softarm_sinc_sqrt_d.m": """function y = softarm_sinc_sqrt_d(z)\n%#codegen\nif abs(z)<1e-8, y=-1/6+z/60-z^2/1680+z^3/90720; else, s=sqrt(z); y=(s*cos(s)-sin(s))/(2*s^3); end\nend\n""",
@@ -108,6 +157,9 @@ def generate_matlab_bundle(
     render_function(
         target / "softarm_kinematics.m", "softarm_kinematics", "H", plant.kinematics,
         (4, 4, plant.config.segments), ["q", "p"], common, function_optimizer,
+    )
+    has_centerline = generate_centerline_matlab(
+        plant, target, common, function_optimizer,
     )
     render_function(
         target / "softarm_end_jacobian.m", "softarm_end_jacobian", "J", plant.end_jacobian,
@@ -181,6 +233,7 @@ def generate_matlab_bundle(
             "base_mode": plant.config.base.mode,
             "mount_xyz": plant.config.base.mount_xyz,
             "mount_rpy": plant.config.base.mount_rpy,
+            "centerline": has_centerline,
         },
         "coordinates": {
             "base": plant.base_coordinate_names,

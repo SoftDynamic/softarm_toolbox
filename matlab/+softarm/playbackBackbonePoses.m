@@ -5,6 +5,9 @@ arguments
     options.AxisLength (1,1) double {mustBePositive} = 0.08
     options.PlaybackSpeed (1,1) double {mustBePositive} = 0.5
     options.Bundle (1,1) string = ""
+    options.SamplesPerSegment (1,1) double {mustBeInteger, ...
+        mustBeGreaterThanOrEqual(options.SamplesPerSegment,2), ...
+        mustBeLessThanOrEqual(options.SamplesPerSegment,128)} = 16
 end
 
 if isempty(logData)
@@ -17,9 +20,11 @@ if isempty(logData)
 end
 [time,qFrames] = normalizeLog(logData);
 plant = loadPlaybackPlant(options.Bundle);
-poseFrames = softarm.reconstructBackbonePoses(qFrames,plant);
+[poseFrames,baseFrames,centerlineFrames] = softarm.reconstructBackbonePoses( ...
+    qFrames,plant,options.SamplesPerSegment);
 frameCount = numel(time);
 axisLength = options.AxisLength;
+baseAxisLength = 2*axisLength;
 
 viewer = uifigure("Name","SoftArm Pose Playback", ...
     "Position",[100 100 940 680],"Color",[0.97 0.97 0.97]);
@@ -43,9 +48,10 @@ titleHandle = title(axesHandle,"Soft-arm key-node poses", ...
 enableDefaultInteractivity(axesHandle);
 
 backbone = line(axesHandle,nan,nan,nan, ...
-    "Color",[0.12 0.12 0.12],"LineWidth",2.0, ...
-    "Marker","o","MarkerSize",5,"MarkerFaceColor",[0.85 0.85 0.85], ...
-    "Tag","softarm_backbone");
+    "Color",[0.12 0.12 0.12],"LineWidth",2.0,"Tag","softarm_backbone");
+nodes = line(axesHandle,nan,nan,nan,"LineStyle","none", ...
+    "Marker","o","MarkerSize",5,"Color",[0.12 0.12 0.12], ...
+    "MarkerFaceColor",[0.85 0.85 0.85],"Tag","softarm_backbone_nodes");
 line(axesHandle,0,0,0,"LineStyle","none","Marker","+", ...
     "MarkerSize",8,"Color",[0.35 0.35 0.35],"Tag","softarm_world_origin");
 xAxis = quiver3(axesHandle,nan,nan,nan,nan,nan,nan,0, ...
@@ -57,6 +63,15 @@ yAxis = quiver3(axesHandle,nan,nan,nan,nan,nan,nan,0, ...
 zAxis = quiver3(axesHandle,nan,nan,nan,nan,nan,nan,0, ...
     "Color",[0.12 0.30 0.90],"LineWidth",1.4,"MaxHeadSize",0.45, ...
     "Tag","softarm_z_axes");
+baseXAxis = quiver3(axesHandle,nan,nan,nan,nan,nan,nan,0, ...
+    "Color",[0.88 0.10 0.10],"LineWidth",2.4,"MaxHeadSize",0.55, ...
+    "Tag","softarm_base_x_axis");
+baseYAxis = quiver3(axesHandle,nan,nan,nan,nan,nan,nan,0, ...
+    "Color",[0.10 0.62 0.18],"LineWidth",2.4,"MaxHeadSize",0.55, ...
+    "Tag","softarm_base_y_axis");
+baseZAxis = quiver3(axesHandle,nan,nan,nan,nan,nan,nan,0, ...
+    "Color",[0.12 0.30 0.90],"LineWidth",2.4,"MaxHeadSize",0.55, ...
+    "Tag","softarm_base_z_axis");
 
 playButton = uibutton(layout,"push","Text","Play");
 playButton.Layout.Row = 2;
@@ -81,7 +96,7 @@ speedControl = uidropdown(layout, ...
 speedControl.Layout.Row = 2;
 speedControl.Layout.Column = 4;
 
-setFixedLimits(axesHandle,poseFrames,axisLength);
+setFixedLimits(axesHandle,centerlineFrames,baseFrames,baseAxisLength);
 playTimer = timer("ExecutionMode","fixedSpacing","Period",0.04, ...
     "BusyMode","drop","ObjectVisibility","off","TimerFcn",@advancePlayback);
 wallStart = [];
@@ -145,14 +160,22 @@ renderFrame(1);
         nodeCount = numel(transformStack)/16;
         transforms = reshape(transformStack,4,4,nodeCount);
         positions = reshape(transforms(1:3,4,:),3,nodeCount).';
+        centerline = reshape(centerlineFrames(frame,:),3,[]).';
         xDirections = reshape(transforms(1:3,1,:),3,nodeCount).';
         yDirections = reshape(transforms(1:3,2,:),3,nodeCount).';
         zDirections = reshape(transforms(1:3,3,:),3,nodeCount).';
-        set(backbone,"XData",positions(:,1),"YData",positions(:,2), ...
+        set(backbone,"XData",centerline(:,1),"YData",centerline(:,2), ...
+            "ZData",centerline(:,3));
+        set(nodes,"XData",positions(:,1),"YData",positions(:,2), ...
             "ZData",positions(:,3));
         setQuiver(xAxis,positions,axisLength*xDirections);
         setQuiver(yAxis,positions,axisLength*yDirections);
         setQuiver(zAxis,positions,axisLength*zDirections);
+        baseTransform = reshape(baseFrames(frame,:),4,4);
+        basePosition = baseTransform(1:3,4).';
+        setQuiver(baseXAxis,basePosition,baseAxisLength*baseTransform(1:3,1).');
+        setQuiver(baseYAxis,basePosition,baseAxisLength*baseTransform(1:3,2).');
+        setQuiver(baseZAxis,basePosition,baseAxisLength*baseTransform(1:3,3).');
         timeSlider.Value = time(frame);
         timeLabel.Text = sprintf("t = %.3f / %.3f s",time(frame),time(end));
         titleHandle.String = sprintf("Soft-arm key-node poses   frame %d / %d", ...
@@ -240,20 +263,25 @@ else
 end
 end
 
-function setFixedLimits(axesHandle,poseFrames,axisLength)
-frameCount = size(poseFrames,1);
-nodeCount = size(poseFrames,2)/16;
-positions = zeros(frameCount*nodeCount,3);
+function setFixedLimits(axesHandle,centerlineFrames,baseFrames,baseAxisLength)
+frameCount = size(centerlineFrames,1);
+pointCount = size(centerlineFrames,2)/3;
+positions = zeros(frameCount*pointCount,3);
 for frame = 1:frameCount
-    transforms = reshape(poseFrames(frame,:),4,4,nodeCount);
-    rows = (frame-1)*nodeCount+(1:nodeCount);
-    positions(rows,:) = reshape(transforms(1:3,4,:),3,nodeCount).';
+    rows = (frame-1)*pointCount+(1:pointCount);
+    positions(rows,:) = reshape(centerlineFrames(frame,:),3,pointCount).';
 end
+basePositions = zeros(frameCount,3);
+for frame = 1:frameCount
+    baseTransform = reshape(baseFrames(frame,:),4,4);
+    basePositions(frame,:) = baseTransform(1:3,4).';
+end
+positions = [positions;basePositions];
 minimum = min(positions,[],1);
 maximum = max(positions,[],1);
 span = max(maximum-minimum);
-span = max(span,4*axisLength);
-margin = max(0.12*span,axisLength);
+span = max(span,2*baseAxisLength);
+margin = max(0.12*span,baseAxisLength);
 center = 0.5*(minimum+maximum);
 halfSpan = 0.5*span+margin;
 axesHandle.XLim = center(1)+[-halfSpan halfSpan];

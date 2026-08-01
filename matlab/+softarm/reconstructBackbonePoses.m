@@ -1,12 +1,16 @@
-function poseFrames = reconstructBackbonePoses(qFrames,plant)
+function [poseFrames,baseFrames,centerlineFrames] = ...
+    reconstructBackbonePoses(qFrames,plant,samplesPerSegment)
 %RECONSTRUCTBACKBONEPOSES Reconstruct the arm root and section-end poses.
-%   POSEFRAMES = RECONSTRUCTBACKBONEPOSES(QFRAMES,PLANT) accepts one
-%   generalized-coordinate sample per row. Each output row stacks the
-%   world transform of the arm mounting root followed by every section-end
-%   world transform, using MATLAB column-major order for each 4-by-4 pose.
+%   Each row of QFRAMES is one generalized-coordinate sample. POSEFRAMES
+%   stacks the arm mounting root and section-end transforms. BASEFRAMES
+%   stacks the vehicle-body transform. CENTERLINEFRAMES stacks 3-D points
+%   beginning at the arm root and continuing section-by-section.
 arguments
     qFrames (:,:) double
     plant (1,1) struct
+    samplesPerSegment (1,1) double {mustBeInteger, ...
+        mustBeGreaterThanOrEqual(samplesPerSegment,2), ...
+        mustBeLessThanOrEqual(samplesPerSegment,128)} = 16
 end
 
 if ~all(isfield(plant,{'nq','nbase','parameters','manifest','kinematics'}))
@@ -29,6 +33,18 @@ mountTransform = transformRpy(model.mount_xyz,model.mount_rpy);
 segmentCount = double(model.segments);
 frameCount = size(qFrames,1);
 poseFrames = zeros(frameCount,16*(segmentCount+1));
+baseFrames = zeros(frameCount,16);
+hasCenterline = isfield(plant,"centerline") && ~isempty(plant.centerline);
+if hasCenterline
+    sampleCoordinates = (1:samplesPerSegment)/samplesPerSegment;
+    centerlinePointCount = 1+segmentCount*samplesPerSegment;
+else
+    warning("softarm:MissingCenterline", ...
+        "Bundle has no model-derived centerline; using the key-node polyline.");
+    sampleCoordinates = [];
+    centerlinePointCount = segmentCount+1;
+end
+centerlineFrames = zeros(frameCount,3*centerlinePointCount);
 for frame = 1:frameCount
     q = qFrames(frame,:).';
     switch string(model.base_mode)
@@ -44,6 +60,7 @@ for frame = 1:frameCount
             error("softarm:UnsupportedBaseMode", ...
                 "Unsupported base mode '%s'.",string(model.base_mode));
     end
+    baseFrames(frame,:) = baseTransform(:).';
     sectionTransforms = plant.kinematics(q,plant.parameters);
     if size(sectionTransforms,1) ~= 4 || size(sectionTransforms,2) ~= 4 || ...
             size(sectionTransforms,3) ~= segmentCount
@@ -51,8 +68,20 @@ for frame = 1:frameCount
             "Kinematics output must contain %d 4-by-4 section transforms.", ...
             segmentCount);
     end
-    transforms = cat(3,baseTransform*mountTransform,sectionTransforms);
+    rootTransform = baseTransform*mountTransform;
+    transforms = cat(3,rootTransform,sectionTransforms);
     poseFrames(frame,:) = transforms(:).';
+    if hasCenterline
+        sampledPositions = plant.centerline(q,plant.parameters,sampleCoordinates);
+        if ~isequal(size(sampledPositions),[3,segmentCount*samplesPerSegment])
+            error("softarm:InvalidCenterline", ...
+                "Centerline output dimensions do not match the model and sample count.");
+        end
+        centerline = [rootTransform(1:3,4),sampledPositions];
+    else
+        centerline = reshape(transforms(1:3,4,:),3,segmentCount+1);
+    end
+    centerlineFrames(frame,:) = centerline(:).';
 end
 end
 

@@ -13,7 +13,8 @@
       0.0,
       0.0,
       0.0
-    ]
+    ],
+    "centerline": true
   },
   "coordinates": {
     "base": [],

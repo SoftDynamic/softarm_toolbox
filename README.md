@@ -292,7 +292,7 @@ stabilization_ratio = 1.0
 
 `manifest.json` 定义生成模型的公共元数据：
 
-- `model`：Rod 理论、空间参数化、段数、基座模式和固定安装变换
+- `model`：Rod 理论、空间参数化、段数、基座模式、固定安装变换和中心线能力
 - `coordinates.base`、`coordinates.arm`：有序坐标名称
 - `parameters`：有序参数名称与默认值
 - `actuation`：执行器类型、模式和通道
@@ -313,6 +313,9 @@ softarm_applied_force(q,tau_arm,w_vehicle,w_tip,p)
 softarm_forward_dynamics(q,dq,tau_arm,w_vehicle,w_tip,p)
 softarm_state_rhs(x,tau_arm,w_vehicle,w_tip,p)
 ```
+
+`manifest.model.centerline` 为 `true` 的模型还提供
+`softarm_centerline(q,p,xi)`，用于按归一化材料坐标采样各段中心线。
 
 配置包含执行器或约束时，生成包还会提供相应的
 `softarm_actuator_*` 或 `softarm_constraint_*` 函数。
@@ -425,16 +428,21 @@ softarm_pose_playback
 
 ```matlab
 softarm_pose_playback(softarm_q_log)
-softarm_pose_playback( ...
-    softarm_q_log,Bundle="examples/generated/euler_bernoulli_ritz_n2")
+softarm_pose_playback(softarm_q_log, ...
+    Bundle="examples/generated/euler_bernoulli_ritz_n2", ...
+    SamplesPerSegment=16)
 ```
 
 播放器根据 `q` 和生成包中的基座安装元数据重建软臂安装根与各段末端的世界系
-位姿。中心线从真实安装根开始，世界原点作为独立标记；浮动基座运动或安装变换
-非零时，根节点和 RGB 姿态轴会随之正确移动。输入必须是广义坐标日志，可采用
-timeseries、timetable、structure-with-time、包含 `softarm_q_log` 的
-`Simulink.SimulationOutput`，或首列为时间的数值矩阵。仅含段末端变换的
-`backbone_poses` 日志不能用于离线回放。
+位姿。`softarm_centerline` 在每段材料坐标上直接计算 PCS 或 Ritz 模型的中心线；
+`SamplesPerSegment` 默认为 16，可在 2 到 128 之间调节。外部模型未提供段内
+几何时，播放器会警告并退回关键节点折线。
+
+播放器用较长、较粗的 RGB 箭头显示刚体基座系 $H_{WB}$，并用短轴显示软臂安装
+根 $H_{WB}H_{BM}$ 和各段末端姿态。世界原点是独立标记，不参与中心线连接。
+输入必须是广义坐标日志，可采用 timeseries、timetable、structure-with-time、
+包含 `softarm_q_log` 的 `Simulink.SimulationOutput`，或首列为时间的数值矩阵。
+仅含段末端变换的 `backbone_poses` 日志不能用于离线回放。
 
 ## 7. 数理基础
 

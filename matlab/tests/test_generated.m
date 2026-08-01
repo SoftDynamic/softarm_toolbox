@@ -101,14 +101,22 @@ floating = syntheticPlaybackPlant("floating_rpy",mountXYZ,mountRPY,16,6);
 qFrames = zeros(2,16);
 qFrames(1,1:6) = [1.1 -2.2 3.3 0.21 -0.31 0.42];
 qFrames(2,1:6) = [-0.4 0.5 -0.6 -0.12 0.23 -0.34];
-poses = softarm.reconstructBackbonePoses(qFrames,floating);
+[poses,baseFrames,centerlineFrames] = ...
+    softarm.reconstructBackbonePoses(qFrames,floating,4);
 verifySize(testCase,poses,[2 32]);
+verifySize(testCase,baseFrames,[2 16]);
+verifySize(testCase,centerlineFrames,[2 15]);
 for frame = 1:2
     transforms = reshape(poses(frame,:),4,4,2);
+    actualBase = reshape(baseFrames(frame,:),4,4);
+    expectedBase = transformZYX(qFrames(frame,1:3),qFrames(frame,4:6));
     expectedRoot = transformZYX(qFrames(frame,1:3),qFrames(frame,4:6))* ...
         transformZYX(mountXYZ,mountRPY);
+    verifyEqual(testCase,actualBase,expectedBase,"AbsTol",1e-12);
     verifyEqual(testCase,transforms(:,:,1),expectedRoot,"AbsTol",1e-12);
     verifyEqual(testCase,transforms(:,:,2),eye(4),"AbsTol",1e-12);
+    centerline = reshape(centerlineFrames(frame,:),3,5);
+    verifyEqual(testCase,centerline(:,1),expectedRoot(1:3,4),"AbsTol",1e-12);
 end
 
 fixed = syntheticPlaybackPlant("fixed",mountXYZ,mountRPY,2,0);
@@ -116,6 +124,14 @@ fixedPoses = softarm.reconstructBackbonePoses([0.1 0.2],fixed);
 fixedTransforms = reshape(fixedPoses,4,4,2);
 verifyEqual(testCase,fixedTransforms(:,:,1), ...
     transformZYX(mountXYZ,mountRPY),"AbsTol",1e-12);
+
+fallback = floating;
+fallback.centerline = [];
+lastwarn("");
+[~,~,fallbackCenterline] = softarm.reconstructBackbonePoses(qFrames,fallback,4);
+[~,warningId] = lastwarn;
+verifyEqual(testCase,string(warningId),"softarm:MissingCenterline");
+verifySize(testCase,fallbackCenterline,[2 6]);
 
 verifyError(testCase,@() softarm.reconstructBackbonePoses(zeros(1,15),floating), ...
     "softarm:InvalidQFrames");
@@ -133,12 +149,50 @@ q = zeros(1,plant.nq);
 q(1:6) = [1.1 -2.2 3.3 0.21 -0.31 0.42];
 lengthIndex = find(strcmp({plant.manifest.parameters.name},"s1_rest_length"),1);
 q(plant.nbase+3) = plant.parameters(lengthIndex);
-poses = softarm.reconstructBackbonePoses(q,plant);
+[poses,baseFrames,centerlineFrames] = ...
+    softarm.reconstructBackbonePoses(q,plant);
 transforms = reshape(poses,4,4,plant.manifest.model.segments+1);
+baseTransform = reshape(baseFrames,4,4);
 verifyEqual(testCase,transforms(:,:,1), ...
+    transformZYX(q(1:3),q(4:6)),"AbsTol",1e-12);
+verifyEqual(testCase,baseTransform, ...
     transformZYX(q(1:3),q(4:6)),"AbsTol",1e-12);
 verifyEqual(testCase,transforms(:,:,2:end), ...
     plant.kinematics(q.',plant.parameters),"AbsTol",1e-12);
+verifySize(testCase,centerlineFrames,[1 51]);
+centerline = reshape(centerlineFrames,3,17);
+verifyEqual(testCase,centerline(:,end),transforms(1:3,4,end),"AbsTol",1e-12);
+end
+
+function testGeneratedModelCenterlines(testCase)
+root = testCase.TestData.root;
+names = ["extensible_kirchhoff_pcs_lumped_n2", ...
+    "euler_bernoulli_ritz_n2","cosserat_pcs_lumped_n1"];
+sampleCoordinates = [0.25 0.5 0.75 1.0];
+for name = names
+    plant = softarm.loadModel(fullfile(root,"examples","generated",name));
+    verifyTrue(testCase,logical(plant.manifest.model.centerline));
+    verifyNotEmpty(testCase,plant.centerline);
+    q = nominalConfiguration(plant);
+    q(1) = q(1)+0.12;
+    points = plant.centerline(q,plant.parameters,sampleCoordinates);
+    verifySize(testCase,points,[3 plant.manifest.model.segments*4]);
+    verifyTrue(testCase,all(isfinite(points(:))));
+    endpoints = plant.kinematics(q,plant.parameters);
+    verifyEqual(testCase,points(:,4:4:end), ...
+        reshape(endpoints(1:3,4,:),3,[]),"AbsTol",1e-10);
+end
+
+plant = softarm.loadModel(fullfile(root,"examples","generated", ...
+    "extensible_kirchhoff_pcs_lumped_n2"));
+q = nominalConfiguration(plant);
+q(1) = 0.35;
+points = plant.centerline(q,plant.parameters,(1:16)/16);
+firstSection = points(:,1:16);
+chords = diff([zeros(3,1),firstSection],1,2);
+verifyGreaterThan(testCase,norm(cross(chords(:,1),chords(:,end))),1e-5);
+verifyError(testCase,@() plant.centerline(q,plant.parameters,[-0.1 1]), ...
+    "softarm:InvalidMaterialCoordinate");
 end
 
 function testPlaybackRejectsPoseStack(testCase)
@@ -147,6 +201,40 @@ bundle = fullfile(testCase.TestData.root,"examples","generated", ...
 legacyPoseLog = [0 zeros(1,16)];
 verifyError(testCase,@() softarm.playbackBackbonePoses( ...
     legacyPoseLog,Bundle=string(bundle)),"softarm:InvalidQFrames");
+end
+
+function testPlaybackGraphicsAndSampling(testCase)
+bundle = fullfile(testCase.TestData.root,"examples","generated", ...
+    "extensible_kirchhoff_pcs_flying_plane_contact_n1");
+plant = softarm.loadModel(bundle);
+q = zeros(1,plant.nq);
+q(1:6) = [10 20 30 0.2 -0.3 0.4];
+q(7) = 0.35;
+q(9) = plant.parameters(1);
+viewer = softarm.playbackBackbonePoses([0 q],Bundle=string(bundle), ...
+    AxisLength=0.05,SamplesPerSegment=8);
+cleanup = onCleanup(@() closeIfValid(viewer));
+
+backbone = findobj(viewer,"Tag","softarm_backbone");
+nodes = findobj(viewer,"Tag","softarm_backbone_nodes");
+nodeXAxis = findobj(viewer,"Tag","softarm_x_axes");
+baseXAxis = findobj(viewer,"Tag","softarm_base_x_axis");
+verifyEqual(testCase,numel(backbone.XData),9);
+verifyEqual(testCase,numel(nodes.XData),2);
+verifyEqual(testCase,norm([baseXAxis.UData baseXAxis.VData baseXAxis.WData]), ...
+    0.1,"AbsTol",1e-12);
+verifyEqual(testCase,norm([nodeXAxis.UData(1) nodeXAxis.VData(1) ...
+    nodeXAxis.WData(1)]),0.05,"AbsTol",1e-12);
+verifyGreaterThanOrEqual(testCase,min(backbone.XData),backbone.Parent.XLim(1));
+verifyLessThanOrEqual(testCase,max(backbone.XData),backbone.Parent.XLim(2));
+verifyGreaterThanOrEqual(testCase,min(backbone.YData),backbone.Parent.YLim(1));
+verifyLessThanOrEqual(testCase,max(backbone.YData),backbone.Parent.YLim(2));
+verifyGreaterThanOrEqual(testCase,min(backbone.ZData),backbone.Parent.ZLim(1));
+verifyLessThanOrEqual(testCase,max(backbone.ZData),backbone.Parent.ZLim(2));
+verifyError(testCase,@() softarm.playbackBackbonePoses( ...
+    [0 q],Bundle=string(bundle),SamplesPerSegment=1), ...
+    "MATLAB:validators:mustBeGreaterThanOrEqual");
+clear cleanup
 end
 
 function testGeneratedPoseStacks(testCase)
@@ -354,11 +442,38 @@ function plant = syntheticPlaybackPlant(mode,mountXYZ,mountRPY,nq,nbase)
 model = struct("base_mode",mode,"segments",1, ...
     "mount_xyz",mountXYZ,"mount_rpy",mountRPY);
 plant = struct("nq",nq,"nbase",nbase,"parameters",zeros(0,1), ...
-    "manifest",struct("model",model),"kinematics",@identityKinematics);
+    "manifest",struct("model",model),"kinematics",@identityKinematics, ...
+    "centerline",@syntheticCenterline);
 end
 
 function transforms = identityKinematics(~,~)
 transforms = eye(4);
+end
+
+function points = syntheticCenterline(~,~,xi)
+points = zeros(3,numel(xi));
+end
+
+function q = nominalConfiguration(plant)
+q = zeros(plant.nq,1);
+armCoordinates = cellstr(plant.manifest.coordinates.arm);
+for armIndex = 1:plant.narm
+    lengthToken = regexp(armCoordinates{armIndex},'^l(\d+)$','tokens','once');
+    axialToken = regexp(armCoordinates{armIndex},'^vz(\d+)$','tokens','once');
+    if ~isempty(lengthToken)
+        parameterName = "s"+lengthToken{1}+"_rest_length";
+        parameterIndex = find(strcmp({plant.manifest.parameters.name},parameterName),1);
+        q(plant.nbase+armIndex) = plant.parameters(parameterIndex);
+    elseif ~isempty(axialToken)
+        q(plant.nbase+armIndex) = 0;
+    end
+end
+end
+
+function closeIfValid(viewer)
+if isvalid(viewer)
+    close(viewer);
+end
 end
 
 function names = rootOutports(model)
