@@ -7,6 +7,7 @@ import sympy as sp
 from softarm import derive_actuation, load_config
 from softarm.backends.protocol import decode_dag, encode_dag
 from softarm.codegen import generate_matlab_bundle
+from softarm.codegen.matlab import _HELPERS
 from softarm.config import (
     ActuationConfig,
     BaseConfig,
@@ -77,6 +78,16 @@ def test_minimal_manifest_and_fixed_functions(tmp_path):
     assert r"\begin{document}" in document
     assert document.endswith("\\end{document}\n")
     assert "Exact Symbolic Appendix" not in document
+
+
+def test_reference_bundles_include_all_fixed_matlab_helpers():
+    manifests = sorted((ROOT / "examples" / "generated").glob("*/manifest.json"))
+    assert manifests
+    for manifest in manifests:
+        for filename, expected in _HELPERS.items():
+            path = manifest.parent / filename
+            assert path.is_file(), f"{manifest.parent.name} is missing {filename}"
+            assert path.read_text(encoding="utf-8") == expected
 
 
 def test_pac_bundle_contains_moment_helpers_and_public_coordinates(tmp_path):
