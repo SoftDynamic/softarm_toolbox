@@ -6,6 +6,8 @@ from typing import Any
 import sympy as sp
 
 from ..special import (
+    AffineCosMoment,
+    AffineSinMoment,
     CoscSqrt,
     CoscSqrtD,
     CoscSqrtDD,
@@ -42,6 +44,8 @@ _CONSTRUCTORS = {
     "Sinc3Sqrt": Sinc3Sqrt,
     "Sinc3SqrtD": Sinc3SqrtD,
     "Sinc3SqrtDD": Sinc3SqrtDD,
+    "AffineCosMoment": AffineCosMoment,
+    "AffineSinMoment": AffineSinMoment,
 }
 
 

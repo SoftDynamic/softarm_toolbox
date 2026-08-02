@@ -102,6 +102,25 @@ def test_unregistered_combination_is_discovered_from_registry(tmp_path):
         derive(config)
 
 
+def test_pac_validation_and_explicit_cosserat_rejection(tmp_path):
+    low_order = tmp_path / "low_order.toml"
+    low_order.write_text(
+        '[model]\nrod="euler_bernoulli"\nparameterization="pac"\nsegments=1\n'
+        'inertia="distributed"\n[integration]\nmethod="gauss"\norder=3\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="order at least 4"):
+        derive(load_config(low_order))
+
+    unsupported = tmp_path / "cosserat_pac.toml"
+    unsupported.write_text(
+        '[model]\nrod="cosserat"\nparameterization="pac"\nsegments=1\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="unregistered model combination"):
+        derive(load_config(unsupported))
+
+
 def test_legacy_model_family_is_rejected(tmp_path):
     path = tmp_path / "legacy.toml"
     path.write_text('[model]\nfamily="legacy"\nsegments=1\n', encoding="utf-8")

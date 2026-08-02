@@ -1,0 +1,160 @@
+{
+  "model": {
+    "rod": "extensible_kirchhoff",
+    "parameterization": "pac",
+    "segments": 2,
+    "base_mode": "fixed",
+    "mount_xyz": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "mount_rpy": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "centerline": true
+  },
+  "coordinates": {
+    "base": [],
+    "arm": [
+      "c0_1",
+      "c1_1",
+      "phi1",
+      "l1",
+      "c0_2",
+      "c1_2",
+      "phi2",
+      "l2"
+    ]
+  },
+  "parameters": [
+    {
+      "name": "s1_rest_length",
+      "default": 0.45
+    },
+    {
+      "name": "s2_rest_length",
+      "default": 0.5
+    },
+    {
+      "name": "s1_mass",
+      "default": 0.18
+    },
+    {
+      "name": "s2_mass",
+      "default": 0.2
+    },
+    {
+      "name": "s1_Ixx",
+      "default": 0.0018
+    },
+    {
+      "name": "s2_Ixx",
+      "default": 0.002
+    },
+    {
+      "name": "s1_Iyy",
+      "default": 0.0018
+    },
+    {
+      "name": "s2_Iyy",
+      "default": 0.002
+    },
+    {
+      "name": "s1_Izz",
+      "default": 0.0001
+    },
+    {
+      "name": "s2_Izz",
+      "default": 0.00011
+    },
+    {
+      "name": "s1_k_bx",
+      "default": 1.1
+    },
+    {
+      "name": "s2_k_bx",
+      "default": 1.2
+    },
+    {
+      "name": "s1_k_by",
+      "default": 1.0
+    },
+    {
+      "name": "s2_k_by",
+      "default": 1.3
+    },
+    {
+      "name": "s1_k_phi",
+      "default": 0.2
+    },
+    {
+      "name": "s2_k_phi",
+      "default": 0.22
+    },
+    {
+      "name": "s1_k_l",
+      "default": 45.0
+    },
+    {
+      "name": "s2_k_l",
+      "default": 50.0
+    },
+    {
+      "name": "s1_d_bx",
+      "default": 0.05
+    },
+    {
+      "name": "s2_d_bx",
+      "default": 0.05
+    },
+    {
+      "name": "s1_d_by",
+      "default": 0.06
+    },
+    {
+      "name": "s2_d_by",
+      "default": 0.06
+    },
+    {
+      "name": "s1_d_phi",
+      "default": 0.02
+    },
+    {
+      "name": "s2_d_phi",
+      "default": 0.02
+    },
+    {
+      "name": "s1_d_l",
+      "default": 0.1
+    },
+    {
+      "name": "s2_d_l",
+      "default": 0.1
+    },
+    {
+      "name": "gravity",
+      "default": 9.81
+    },
+    {
+      "name": "tip_mass",
+      "default": 0.1
+    },
+    {
+      "name": "tip_Ixx",
+      "default": 0.01
+    },
+    {
+      "name": "tip_Iyy",
+      "default": 0.01
+    },
+    {
+      "name": "tip_Izz",
+      "default": 0.01
+    }
+  ],
+  "actuation": null,
+  "constraint": null
+}

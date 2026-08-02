@@ -14,6 +14,16 @@ from .optimization import FunctionOptimizer
 
 
 class _MatlabPrinter(OctaveCodePrinter):
+    def _print_AffineCosMoment(self, expr):
+        return "softarm_affine_cos_moment(" + ",".join(
+            self._print(arg) for arg in expr.args
+        ) + ")"
+
+    def _print_AffineSinMoment(self, expr):
+        return "softarm_affine_sin_moment(" + ",".join(
+            self._print(arg) for arg in expr.args
+        ) + ")"
+
     def _print_SincSqrt(self, expr):
         return f"softarm_sinc_sqrt({self._print(expr.args[0])})"
 
@@ -125,6 +135,9 @@ def generate_centerline_matlab(
 
 
 _HELPERS = {
+    "softarm_affine_cos_moment.m": """function y = softarm_affine_cos_moment(n,c0,c1,xi)\n%#codegen\n[y,~]=softarm_affine_moment_parts(n,c0,c1,xi);\nend\n""",
+    "softarm_affine_sin_moment.m": """function y = softarm_affine_sin_moment(n,c0,c1,xi)\n%#codegen\n[~,y]=softarm_affine_moment_parts(n,c0,c1,xi);\nend\n""",
+    "softarm_affine_moment_parts.m": """function [c,s] = softarm_affine_moment_parts(n,c0,c1,xi)\n%#codegen\nassert(n>=0&&n==floor(n));\nif xi==0, c=0; s=0; return; end\npreviousPreviousReal=0; previousPreviousImag=0;\npreviousReal=1; previousImag=0;\nc=xi^(n+1)/(n+1); s=0; smallTerms=0;\nfor degree=1:256\n    realCoefficient=(-c0*previousImag-c1*previousPreviousImag)/degree;\n    imagCoefficient=(c0*previousReal+c1*previousPreviousReal)/degree;\n    scale=xi^(degree+n+1)/(degree+n+1);\n    realTerm=realCoefficient*scale; imagTerm=imagCoefficient*scale;\n    c=c+realTerm; s=s+imagTerm;\n    if hypot(realTerm,imagTerm)<=2e-16*max(1,hypot(c,s))\n        smallTerms=smallTerms+1;\n        if smallTerms>=4, break; end\n    else\n        smallTerms=0;\n    end\n    previousPreviousReal=previousReal; previousPreviousImag=previousImag;\n    previousReal=realCoefficient; previousImag=imagCoefficient;\nend\nend\n""",
     "softarm_sinc_sqrt.m": """function y = softarm_sinc_sqrt(z)\n%#codegen\nif abs(z)<1e-8, y=1-z/6+z^2/120-z^3/5040+z^4/362880; else, s=sqrt(z); y=sin(s)/s; end\nend\n""",
     "softarm_sinc_sqrt_d.m": """function y = softarm_sinc_sqrt_d(z)\n%#codegen\nif abs(z)<1e-8, y=-1/6+z/60-z^2/1680+z^3/90720; else, s=sqrt(z); y=(s*cos(s)-sin(s))/(2*s^3); end\nend\n""",
     "softarm_sinc_sqrt_dd.m": """function y = softarm_sinc_sqrt_dd(z)\n%#codegen\nif abs(z)<1e-8, y=1/60-z/840+z^2/30240; else, s=sqrt(z); y=((3-z)*sin(s)-3*s*cos(s))/(4*s^5); end\nend\n""",

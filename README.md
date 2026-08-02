@@ -17,11 +17,24 @@ $\tau_a$ 为软臂广义力，$w_B$ 为机体系基座扳手，$w_e$ 为 NED 世
 
 ### 1.1 梁模型与空间参数化
 
-| 梁模型 | Ritz | PCS | 允许的变形 |
-| --- | --- | --- | --- |
-| Euler–Bernoulli | 支持 | 支持 | 仅弯曲 |
-| Extensible Kirchhoff | 支持 | 支持 | 弯曲与轴向伸缩 |
-| Cosserat | 不支持 | 支持 | 弯曲、剪切、伸缩与扭转 |
+| 梁模型 | Ritz | PCS | [PAC](https://arxiv.org/abs/2211.10188) | 保留的应变分量 |
+| --- | --- | --- | --- | --- |
+| Euler–Bernoulli | ✅ | ✅ | ✅ | $\boldsymbol e=[\kappa_x,\kappa_y,0,0,0,0]^T$ |
+| Extensible Kirchhoff | ✅ | ✅ | ✅ | $\boldsymbol e=[\kappa_x,\kappa_y,0,0,0,\varepsilon_z]^T$ |
+| Cosserat | ❌ | ✅ | ❌ | $\boldsymbol e=[\kappa_x,\kappa_y,\kappa_z,\gamma_x,\gamma_y,\varepsilon_z]^T$ |
+
+表中
+
+$$
+\boldsymbol e=
+[\kappa_x,\kappa_y,\kappa_z,\gamma_x,\gamma_y,\varepsilon_z]^T
+$$
+
+表示相对于参考构型的杆应变：$\kappa$ 为角应变，$\gamma_x,\gamma_y$ 为横向剪切应变，
+$\varepsilon_z$ 为轴向应变。该列表示各梁理论保留的应变分量，不表示所有空间参数化都精确
+实现非线性几何约束。PCS 和 PAC 精确实现 Euler–Bernoulli 的不可伸长约束以及两种
+Kirchhoff 梁的无剪切约束，并在可伸长模型中显式表示轴向伸长；Ritz 使用一阶小挠度
+运动学。PAC 的段级截面转角 $\phi_i$ 不是连续扭转应变 $\kappa_z$。
 
 三类模型均支持固定基座和 ZYX 欧拉角浮动基座。浮动基座坐标排列为
 
@@ -35,7 +48,7 @@ $\tau_a$ 为软臂广义力，$w_B$ 为机体系基座扳手，$w_e$ 为 NED 世
 ### 1.2 功能范围
 
 - Euler–Bernoulli、Extensible Kirchhoff 与 Cosserat rod 建模
-- Ritz 与分段恒应变（PCS）空间参数化
+- Ritz、分段恒应变（PCS）与三维分段仿射曲率（PAC）空间参数化
 - 固定基座与浮动基座联合动力学
 - 解析积分与 Gauss–Legendre 积分
 - 通用跨段绳索驱动与严格绳长加速度约束
@@ -199,6 +212,23 @@ inertia = "distributed"
 method = "gauss"
 order = 2
 ```
+
+PAC 分布惯性要求至少四阶 Gauss–Legendre 积分；参考模型使用六阶：
+
+```toml
+[model]
+rod = "euler_bernoulli"
+parameterization = "pac"
+segments = 2
+inertia = "distributed"
+
+[integration]
+method = "gauss"
+order = 6
+```
+
+PAC 的仿射基固定，不使用额外配置表。集中惯性 PAC 可令 `inertia = "lumped"`
+并省略 `[integration]`；分布惯性 PAC 不支持 `method = "analytic"`。
 
 集中惯性使用 `inertia = "lumped"`，并省略 `[integration]`。每段六个坐标是
 相对于可配置参考应变的增量，因此零坐标始终表示无应力参考构型。
@@ -520,7 +550,76 @@ q_i=[b_{x,i},b_{y,i},l_i]^T,\quad
 \nu_i=[0,0,l_i/L_{0,i}]^T.
 $$
 
-### 7.3 Euler–Bernoulli Ritz 运动学
+### 7.3 PAC 运动学
+
+PAC 每段采用三维仿射曲率坐标。Euler–Bernoulli 段为
+$q_i=[c_{0,i},c_{1,i},\phi_i]^T$，Extensible Kirchhoff 段再加入绝对长度
+$l_i$。令
+
+$$
+\alpha_i(\xi)=c_{0,i}\xi+\frac12c_{1,i}\xi^2,
+$$
+
+$$
+\mathcal C_n=\int_0^\xi v^n\cos\left(c_{0,i}v+\frac12c_{1,i}v^2\right)dv,
+\qquad
+\mathcal S_n=\int_0^\xi v^n\sin\left(c_{0,i}v+\frac12c_{1,i}v^2\right)dv.
+$$
+
+局部变换为
+
+$$
+R_i(\xi)=R_z(\phi_i)R_y(\alpha_i(\xi)),
+\qquad
+r_i(\xi)=\ell_i
+\begin{bmatrix}
+\cos\phi_i\,\mathcal S_0\\
+\sin\phi_i\,\mathcal S_0\\
+\mathcal C_0
+\end{bmatrix},
+$$
+
+其中 Euler–Bernoulli 取 $\ell_i=L_i$，Extensible Kirchhoff 取
+$\ell_i=l_i$。因此前者严格满足
+$\|\partial r_i/\partial\xi\|=L_i$，后者的中心线弧长为 $l_i$。
+积分特殊函数在 $c_1=0$ 和完全直杆处使用解析延拓。
+
+以参考弧长为材料坐标，段内连续应变为
+
+$$
+\begin{aligned}
+\text{Euler–Bernoulli:}\quad
+&\kappa_i(\xi)=
+\begin{bmatrix}0&(c_{0,i}+c_{1,i}\xi)/L_i&0\end{bmatrix}^T,
+&&\nu_i=\boldsymbol e_3,\\
+\text{Extensible Kirchhoff:}\quad
+&\kappa_i(\xi)=
+\begin{bmatrix}0&(c_{0,i}+c_{1,i}\xi)/L_{0,i}&0\end{bmatrix}^T,
+&&\nu_i=(l_i/L_{0,i})\boldsymbol e_3,
+\end{aligned}
+$$
+
+其中 $\boldsymbol e_3=[0,0,1]^T$。段起点截面旋转满足
+$R_i(0)=R_z(\phi_i)$；$\phi_i$ 表示相邻段之间的离散材料截面转角，不对应段内的
+连续扭转应变。直杆中心线对 $\phi_i$ 不敏感，多方向绳索
+Jacobian 可能在该构型降秩。
+
+令 $c_i=[c_{0,i},c_{1,i}]^T$、
+$H=\begin{bmatrix}1&1/2\\1/2&1/3\end{bmatrix}$。各向异性 Euler PAC 弹性能为
+
+$$
+V_{e,i}=\frac12\frac{EI_{y,i}\cos^2\phi_i+EI_{x,i}\sin^2\phi_i}{L_i}
+c_i^THc_i+\frac12\frac{GJ_i}{L_i}\phi_i^2.
+$$
+
+Extensible Kirchhoff PAC 弹性能为
+
+$$
+V_{e,i}=\frac12(k_{bx,i}\cos^2\phi_i+k_{by,i}\sin^2\phi_i)c_i^THc_i
++\frac12k_{\phi,i}\phi_i^2+\frac12k_{l,i}(l_i-L_{0,i})^2.
+$$
+
+### 7.4 Euler–Bernoulli 与 Extensible Kirchhoff Ritz 运动学
 
 每段在两个弯曲平面分别使用一个 Ritz 模态：
 
@@ -567,7 +666,19 @@ H_{\mathrm{lin}}(q)=H(0)+
 \right|_{q=0}q_j.
 $$
 
-该模型适用于小挠度、小斜率和小转角工况。Euler 段的弯曲势能为
+该模型适用于小挠度、小斜率和小转角工况。Euler–Bernoulli Ritz 令线性轴向应变为零，
+但其中心线导数满足
+
+$$
+\left\|\frac{\partial r}{\partial\xi}\right\|=
+\sqrt{L^2+a_x^2(\psi_x')^2+a_y^2(\psi_y')^2},
+$$
+
+因此不精确保持弧长；相对 $L$ 的几何伸长为斜率的二阶量，被一阶模型忽略。
+Extensible Kirchhoff Ritz 再加入 $w_z(\xi)=a_z\psi_z(\xi)$，并保留线性轴向应变
+$\varepsilon_z=(a_z/L)\psi_z'(\xi)$；横向斜率引起的二阶轴向应变同样不计。
+
+Euler 段的弯曲势能为
 
 $$
 V_{e,i}=
@@ -578,7 +689,7 @@ V_{e,i}=
 \int_0^1\left(\psi_y''\right)^2d\xi.
 $$
 
-### 7.4 Cosserat PCS 运动学
+### 7.5 Cosserat PCS 运动学
 
 每段使用参考应变 $\kappa_{0,i},\nu_{0,i}$ 和六维应变增量：
 
@@ -615,7 +726,7 @@ V_{e,i}=\frac{L_i}{2}\delta\xi_i^T
 \mathrm{diag}(EI_x,EI_y,GJ,GA_x,GA_y,EA)\delta\xi_i.
 $$
 
-### 7.5 能量、质量矩阵与偏置力
+### 7.6 能量、质量矩阵与偏置力
 
 对于均匀分布惯性，$m_i$ 和 $I_i$ 表示整段总质量和整段局部惯量。
 归一化材料坐标下 $dm=m_i\,d\xi$，每段质量矩阵贡献为
@@ -715,7 +826,7 @@ $$
 $A=\partial\dot x/\partial x$ 以及软臂广义力、基座扳手和末端扳手对应的
 输入矩阵。
 
-### 7.6 材料坐标积分
+### 7.7 材料坐标积分
 
 解析积分为默认策略。Gauss–Legendre 积分显式配置为 $n$ 阶时，
 
@@ -728,7 +839,7 @@ $$
 其中 $(\eta_k,w_k)$ 为区间 $[-1,1]$ 上的 Gauss–Legendre 节点和权重。
 构建过程严格采用配置指定的积分策略。
 
-### 7.7 绳索驱动
+### 7.8 绳索驱动
 
 第 $a$ 个 Extensible Kirchhoff PCS 单绳通道的长度坐标为
 
@@ -743,6 +854,17 @@ $$
 
 `signed` 通道采用相对截面中心对称布置的拮抗绳索半差动长度，
 其轴向分量为零。Euler 通道使用 Ritz 端部斜率构造相应弯曲项。
+
+PAC 段使用总转角 $\bar c_i=c_{0,i}+c_{1,i}/2$。截面极角为 $\theta_{ai}$
+的单绳 span 长度为
+
+$$
+y_{ai}=\ell_i-r_{ai}\bar c_i\cos(\theta_{ai}-\phi_i),
+$$
+
+其中 Euler 取 $\ell_i=L_i$，Extensible Kirchhoff 取 $\ell_i=l_i$；
+`signed` 通道去掉 $\ell_i$。严格加速度模式仍要求无应力参考构型下
+$J_a$ 满行秩，降秩配置直接拒绝且不做正则化。
 
 Cosserat PCS 在偏置 $r=[r\cos\theta,r\sin\theta,0]^T$ 处使用精确常应变绳长
 
@@ -777,7 +899,7 @@ Q-h\\
 \end{bmatrix}.
 $$
 
-### 7.8 加速度级约束
+### 7.9 加速度级约束
 
 约束模型定义约束值、Jacobian、速度偏置、反力映射和稳定化参数：
 
@@ -813,6 +935,8 @@ $$
 | --- | --- |
 | 两段 Extensible Kirchhoff PCS，中点集中惯性 | `extensible_kirchhoff_pcs_lumped_n2` |
 | 两段 Extensible Kirchhoff PCS，分布惯性 | `extensible_kirchhoff_pcs_distributed_n2` |
+| 两段 Euler–Bernoulli PAC，分布惯性 | `euler_bernoulli_pac_distributed_n2` |
+| 两段 Extensible Kirchhoff PAC，分布惯性 | `extensible_kirchhoff_pac_distributed_n2` |
 | 两段 Euler–Bernoulli Ritz | `euler_bernoulli_ritz_n2` |
 | 两段 Euler–Bernoulli PCS | `euler_bernoulli_pcs_n2` |
 | 两段 Extensible Kirchhoff Ritz | `extensible_kirchhoff_ritz_n2` |

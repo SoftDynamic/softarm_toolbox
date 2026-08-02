@@ -106,6 +106,25 @@ def _tendon_builder(
                 if channel.kind == "unilateral":
                     coordinate += length + plant.arm_q[offset + 2]
                 coordinate -= radius * bending
+            elif combination == ("euler_bernoulli", "pac"):
+                offset = 3 * section
+                length = plant_parameters[f"s{span.section}_length"]
+                total_bend = plant.arm_q[offset] + plant.arm_q[offset + 1] / 2
+                bending = total_bend * sp.cos(
+                    sp.Float(str(span.angle)) - plant.arm_q[offset + 2]
+                )
+                if channel.kind == "unilateral":
+                    coordinate += length
+                coordinate -= radius * bending
+            elif combination == ("extensible_kirchhoff", "pac"):
+                offset = 4 * section
+                total_bend = plant.arm_q[offset] + plant.arm_q[offset + 1] / 2
+                bending = total_bend * sp.cos(
+                    sp.Float(str(span.angle)) - plant.arm_q[offset + 2]
+                )
+                if channel.kind == "unilateral":
+                    coordinate += plant.arm_q[offset + 3]
+                coordinate -= radius * bending
             elif combination == ("cosserat", "pcs"):
                 offset = 6 * section
                 length = plant_parameters[f"s{span.section}_length"]
@@ -174,15 +193,18 @@ def _validate_strict_rank(plant: SymbolicPlant, actuation: ActuationModel) -> No
         item.symbol: item.default for item in plant.parameters + actuation.parameters
     }
     reference = {coordinate: 0.0 for coordinate in plant.arm_q}
-    if (plant.config.rod, plant.config.parameterization) == (
-        "extensible_kirchhoff", "pcs"
-    ):
+    if (plant.config.rod, plant.config.parameterization) in {
+        ("extensible_kirchhoff", "pcs"),
+        ("extensible_kirchhoff", "pac"),
+    }:
+        stride = 3 if plant.config.parameterization == "pcs" else 4
+        length_offset = 2 if plant.config.parameterization == "pcs" else 3
         for section in range(plant.config.segments):
             rest = next(
                 item.default for item in plant.parameters
                 if item.name == f"s{section + 1}_rest_length"
             )
-            reference[plant.arm_q[3 * section + 2]] = rest
+            reference[plant.arm_q[stride * section + length_offset]] = rest
     nominal = actuation.jacobian.subs(defaults).subs(reference).evalf()
 
     def nearly_zero(value: sp.Expr) -> bool:

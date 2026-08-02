@@ -11,7 +11,13 @@ from softarm.config import IntegrationConfig, ModelConfig
 from softarm.derive import derive
 from softarm.dynamics import assemble_bias
 from softarm.pipeline import BuildOptions, build_bundle
-from softarm.special import LAMBDA_MODULES, SincSqrt, SincSqrtD
+from softarm.special import (
+    LAMBDA_MODULES,
+    AffineCosMoment,
+    AffineSinMoment,
+    SincSqrt,
+    SincSqrtD,
+)
 
 
 def test_wolfram_end_to_end(monkeypatch, tmp_path):
@@ -38,6 +44,13 @@ def test_wolfram_end_to_end(monkeypatch, tmp_path):
         build_bundle(config, tmp_path, BuildOptions(backend="wolfram"))
         assert kernel.differentiate([SincSqrt(x**2)], [x]) == [
             2 * x * SincSqrtD(x**2)
+        ]
+        c0, c1 = sp.symbols("c0 c1", real=True)
+        assert kernel.differentiate(
+            [AffineCosMoment(0, c0, c1, x)], [c0, c1]
+        ) == [
+            -AffineSinMoment(1, c0, c1, x),
+            -AffineSinMoment(2, c0, c1, x) / 2,
         ]
         factored = kernel.factor_terms([x * (x + 1)])
         assert sp.simplify(factored[0] - x * (x + 1)) == 0

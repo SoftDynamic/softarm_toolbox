@@ -48,6 +48,8 @@ def _numeric(matrix, plant, q):
     "euler_bernoulli_pcs_n2.toml",
     "extensible_kirchhoff_ritz_n2.toml",
     "extensible_kirchhoff_pcs_lumped_n2.toml",
+    "euler_bernoulli_pac_distributed_n2.toml",
+    "extensible_kirchhoff_pac_distributed_n2.toml",
     "cosserat_pcs_lumped_n1.toml",
 ])
 def test_material_kinematics_matches_section_ends(config_name):
@@ -138,6 +140,36 @@ def test_extensible_kirchhoff_ritz_has_three_displacement_coordinates():
     axial_stiffness = sp.diff(plant.potential, plant.arm_q[2], 2)
     defaults = {item.symbol: item.default for item in plant.parameters}
     assert np.isclose(float(axial_stiffness.subs(defaults)), 100.0)
+
+
+def test_pac_coordinates_reference_lengths_and_anisotropic_hankel_energy():
+    euler = derive(ModelConfig(
+        rod="euler_bernoulli", parameterization="pac", segments=1,
+        inertia="lumped", integration=IntegrationConfig(),
+        parameters={"length": 0.5, "EI_x": 2.0, "EI_y": 3.0, "GJ": 0.4},
+    ))
+    assert euler.arm_coordinate_names == ["c0_1", "c1_1", "phi1"]
+    defaults = {item.symbol: item.default for item in euler.parameters}
+    elastic = euler.potential.subs(sp.Symbol("gravity", real=True), 0)
+    hessian = sp.hessian(elastic, euler.arm_q)
+    expected = np.array([[6.0, 3.0, 0.0], [3.0, 2.0, 0.0], [0.0, 0.0, 0.8]])
+    np.testing.assert_allclose(
+        np.asarray(hessian.subs(defaults).subs({item: 0 for item in euler.arm_q}), dtype=float),
+        expected,
+        atol=1e-13,
+    )
+
+    extensible = derive(ModelConfig(
+        rod="extensible_kirchhoff", parameterization="pac", segments=1,
+        inertia="lumped", integration=IntegrationConfig(),
+    ))
+    assert extensible.arm_coordinate_names == ["c0_1", "c1_1", "phi1", "l1"]
+    reference = [0.0, 0.0, 0.0, 0.5]
+    mass = _numeric(extensible.mass, extensible, reference)
+    np.testing.assert_allclose(mass, mass.T, atol=1e-13)
+    assert np.linalg.eigvalsh(mass).min() > 0
+    transform = _numeric(extensible.end_transform, extensible, reference)
+    np.testing.assert_allclose(transform[:3, 3], [0.0, 0.0, 0.5], atol=1e-14)
 
 
 def test_floating_base_has_coupled_coordinates_and_wrench_map():

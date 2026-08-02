@@ -14,6 +14,8 @@ function testReferenceBundles(testCase)
 names = [
     "extensible_kirchhoff_pcs_lumped_n2", ...
     "extensible_kirchhoff_pcs_distributed_n2", ...
+    "euler_bernoulli_pac_distributed_n2", ...
+    "extensible_kirchhoff_pac_distributed_n2", ...
     "euler_bernoulli_ritz_n2","euler_bernoulli_pcs_n2", ...
     "extensible_kirchhoff_ritz_n2", ...
     "cosserat_pcs_lumped_n1","cosserat_pcs_distributed_tendon_n1"
@@ -167,7 +169,8 @@ end
 function testGeneratedModelCenterlines(testCase)
 root = testCase.TestData.root;
 names = ["extensible_kirchhoff_pcs_lumped_n2", ...
-    "euler_bernoulli_ritz_n2","cosserat_pcs_lumped_n1"];
+    "euler_bernoulli_ritz_n2","euler_bernoulli_pac_distributed_n2", ...
+    "extensible_kirchhoff_pac_distributed_n2","cosserat_pcs_lumped_n1"];
 sampleCoordinates = [0.25 0.5 0.75 1.0];
 for name = names
     plant = softarm.loadModel(fullfile(root,"examples","generated",name));
@@ -193,6 +196,31 @@ chords = diff([zeros(3,1),firstSection],1,2);
 verifyGreaterThan(testCase,norm(cross(chords(:,1),chords(:,end))),1e-5);
 verifyError(testCase,@() plant.centerline(q,plant.parameters,[-0.1 1]), ...
     "softarm:InvalidMaterialCoordinate");
+end
+
+function testPACReferenceGeometry(testCase)
+root = testCase.TestData.root;
+plant = softarm.loadModel(fullfile(root,"examples","generated", ...
+    "euler_bernoulli_pac_distributed_n2"));
+q = nominalConfiguration(plant);
+q(1:3) = [0.4;-0.2;0.3];
+xi = [0.25 0.5 1.0];
+points = plant.centerline(q,plant.parameters,xi);
+lengthIndex = find(strcmp({plant.manifest.parameters.name},"s1_length"),1);
+lengthValue = plant.parameters(lengthIndex);
+sineIntegral = arrayfun(@(x) integral( ...
+    @(v) sin(q(1)*v+0.5*q(2)*v.^2),0,x),xi);
+cosineIntegral = arrayfun(@(x) integral( ...
+    @(v) cos(q(1)*v+0.5*q(2)*v.^2),0,x),xi);
+expected = lengthValue*[cos(q(3))*sineIntegral; ...
+    sin(q(3))*sineIntegral;cosineIntegral];
+verifyEqual(testCase,points(:,1:3),expected,"AbsTol",2e-12);
+
+transforms = plant.kinematics(q,plant.parameters);
+alpha = q(1)+q(2)/2;
+rz = [cos(q(3)) -sin(q(3)) 0;sin(q(3)) cos(q(3)) 0;0 0 1];
+ry = [cos(alpha) 0 sin(alpha);0 1 0;-sin(alpha) 0 cos(alpha)];
+verifyEqual(testCase,transforms(1:3,1:3,1),rz*ry,"AbsTol",2e-12);
 end
 
 function testPlaybackRejectsPoseStack(testCase)

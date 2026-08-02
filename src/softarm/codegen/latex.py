@@ -44,6 +44,16 @@ def _symbol_name(name: str) -> str:
     }
     if name in base:
         return base[name]
+    match = re.fullmatch(r"(d?)(c[01])_(\d+)", name)
+    if match:
+        derivative, coefficient, section = match.groups()
+        value = rf"{coefficient}_{{{section}}}"
+        return rf"\dot{{{value}}}" if derivative else value
+    match = re.fullmatch(r"(d?)phi(\d+)", name)
+    if match:
+        derivative, section = match.groups()
+        value = rf"\phi_{{{section}}}"
+        return rf"\dot{{{value}}}" if derivative else value
     match = re.fullmatch(r"(d?)(bx|by|ax|ay|kx|ky|kz|vx|vy|vz|l)(\d+)", name)
     if match:
         derivative, token, section = match.groups()
@@ -63,7 +73,9 @@ def _symbol_name(name: str) -> str:
             "rest_length": ("L", "0"), "length": ("L", None), "mass": ("m", None),
             "Ixx": ("I", "xx"), "Iyy": ("I", "yy"), "Izz": ("I", "zz"),
             "k_bx": ("k", "b_x"), "k_by": ("k", "b_y"), "k_l": ("k", "L"),
+            "k_phi": ("k", r"\phi"),
             "d_bx": ("d", "b_x"), "d_by": ("d", "b_y"), "d_l": ("d", "L"),
+            "d_phi": ("d", r"\phi"),
             "EI_x": ("EI", "x"), "EI_y": ("EI", "y"), "d_ax": ("d", "a_x"),
             "d_ay": ("d", "a_y"),
             "kappa0_x": (r"\kappa", "0,x"), "kappa0_y": (r"\kappa", "0,y"),
@@ -142,6 +154,14 @@ class SoftArmLatexPrinter(LatexPrinter):
 
     def _print_Sinc3SqrtDD(self, expr):
         return self._special("Tfun", expr.args[0], "''")
+
+    def _print_AffineCosMoment(self, expr):
+        order, c0, c1, xi = expr.args
+        return rf"\mathcal{{C}}_{{{self._print(order)}}}\!\left({self._print(c0)},{self._print(c1)},{self._print(xi)}\right)"
+
+    def _print_AffineSinMoment(self, expr):
+        order, c0, c1, xi = expr.args
+        return rf"\mathcal{{S}}_{{{self._print(order)}}}\!\left({self._print(c0)},{self._print(c1)},{self._print(xi)}\right)"
 
 
 def _math(expr: sp.Expr | sp.MatrixBase, printer: SoftArmLatexPrinter) -> str:
@@ -335,6 +355,27 @@ def _kinematics(plant: SymbolicPlant, printer: SoftArmLatexPrinter) -> str:
             ),
             r"Products above first order in the arm Ritz coordinates are discarded; the floating-base attitude, when present, remains exact.",
         ])
+    elif plant.config.parameterization == "pac":
+        lines.extend([
+            r"\subsection{Piecewise-Affine-Curvature Parameterization}",
+            _equation(
+                r"\alpha_i(\xi)=c_{0,i}\xi+\frac12c_{1,i}\xi^2,\qquad "
+                r"\mathcal C_n=\int_0^\xi v^n\cos\!\left(c_{0,i}v+\frac12c_{1,i}v^2\right)dv,\quad "
+                r"\mathcal S_n=\int_0^\xi v^n\sin\!\left(c_{0,i}v+\frac12c_{1,i}v^2\right)dv"
+            ),
+            _equation(
+                r"R_i(\xi)=R_z(\phi_i)R_y(\alpha_i(\xi)),\qquad "
+                r"r_i(\xi)=\ell_i\begin{bmatrix}"
+                r"\cos\phi_i\,\mathcal S_0&\sin\phi_i\,\mathcal S_0&\mathcal C_0"
+                r"\end{bmatrix}^{T}"
+            ),
+            _equation(
+                r"H_i(\xi)=\begin{bmatrix}R_i(\xi)&r_i(\xi)\\0&1\end{bmatrix},\qquad "
+                + (r"\ell_i=L_i" if plant.config.rod == "euler_bernoulli" else r"\ell_i=l_i"),
+                "eq:local-transform",
+            ),
+            r"The paper convention is retained: $R_i(0)=R_z(\phi_i)$, so $\phi_i$ also represents a discrete material-frame twist between sections.",
+        ])
     else:
         lines.append(
             r"This externally registered rod--parameterization combination is documented "
@@ -431,8 +472,27 @@ def _energy_and_dynamics(plant: SymbolicPlant, printer: SoftArmLatexPrinter) -> 
             r"GJ_i\delta\kappa_{z,i}^2+GA_{x,i}\delta\nu_{x,i}^2+"
             r"GA_{y,i}\delta\nu_{y,i}^2+EA_i\delta\nu_{z,i}^2\right)"
         ))
+    elif combination == ("euler_bernoulli", "pac"):
+        lines.append(_equation(
+            r"V_{\mathrm{elastic}}=\frac12\sum_{i=1}^{N}\left["
+            r"\frac{EI_{y,i}\cos^2\phi_i+EI_{x,i}\sin^2\phi_i}{L_i}"
+            r"c_i^THc_i+\frac{GJ_i}{L_i}\phi_i^2\right],\qquad "
+            r"H=\begin{bmatrix}1&1/2\\1/2&1/3\end{bmatrix}"
+        ))
+    elif combination == ("extensible_kirchhoff", "pac"):
+        lines.append(_equation(
+            r"V_{\mathrm{elastic}}=\frac12\sum_{i=1}^{N}\left["
+            r"(k_{b_x,i}\cos^2\phi_i+k_{b_y,i}\sin^2\phi_i)c_i^THc_i+"
+            r"k_{\phi,i}\phi_i^2+k_{L,i}(l_i-L_{0,i})^2\right],\qquad "
+            r"H=\begin{bmatrix}1&1/2\\1/2&1/3\end{bmatrix}"
+        ))
+    damping_equation = (
+        r"D=" + _math(plant.damping, printer)
+        if plant.config.parameterization == "pac"
+        else r"D=\operatorname{diag}\!\left(" + _math(damping_diagonal, printer) + r"\right)"
+    )
     lines.extend([
-        _equation(r"D=\operatorname{diag}\!\left(" + _math(damping_diagonal, printer) + r"\right)"),
+        _equation(damping_equation),
         _equation(
             r"c(\boldsymbol q,\dot{\boldsymbol q})="
             r"\frac{\partial(M\dot{\boldsymbol q})}{\partial\boldsymbol q}\dot{\boldsymbol q}-"

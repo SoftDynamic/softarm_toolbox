@@ -73,6 +73,56 @@ class Sinc3SqrtDD(sp.Function):
     nargs = 1
 
 
+class AffineCosMoment(sp.Function):
+    """Real moment integral of cos(c0*v + c1*v**2/2) on [0, xi]."""
+
+    nargs = 4
+
+    @classmethod
+    def eval(cls, order, c0, c1, xi):
+        if order.is_integer is False or order.is_nonnegative is False:
+            raise ValueError("affine moment order must be a nonnegative integer")
+        if xi.is_zero:
+            return sp.S.Zero
+        if c0.is_zero and c1.is_zero and isinstance(order, sp.Integer):
+            return xi ** (order + 1) / (order + 1)
+        return None
+
+    def fdiff(self, argindex=1):
+        order, c0, c1, xi = self.args
+        if argindex == 2:
+            return -AffineSinMoment(order + 1, c0, c1, xi)
+        if argindex == 3:
+            return -sp.Rational(1, 2) * AffineSinMoment(order + 2, c0, c1, xi)
+        if argindex == 4:
+            return xi**order * sp.cos(c0 * xi + c1 * xi**2 / 2)
+        raise sp.ArgumentIndexError(self, argindex)
+
+
+class AffineSinMoment(sp.Function):
+    """Real moment integral of sin(c0*v + c1*v**2/2) on [0, xi]."""
+
+    nargs = 4
+
+    @classmethod
+    def eval(cls, order, c0, c1, xi):
+        if order.is_integer is False or order.is_nonnegative is False:
+            raise ValueError("affine moment order must be a nonnegative integer")
+        if xi.is_zero or (c0.is_zero and c1.is_zero):
+            return sp.S.Zero
+        return None
+
+    def fdiff(self, argindex=1):
+        order, c0, c1, xi = self.args
+        if argindex == 2:
+            return AffineCosMoment(order + 1, c0, c1, xi)
+        if argindex == 3:
+            return sp.Rational(1, 2) * AffineCosMoment(order + 2, c0, c1, xi)
+        if argindex == 4:
+            return xi**order * sp.sin(c0 * xi + c1 * xi**2 / 2)
+        raise sp.ArgumentIndexError(self, argindex)
+
+
 # This registry is the sole source used to teach generic CAS executors the
 # symbolic derivative heads. It contains no backend-specific formula.
 SPECIAL_DERIVATIVE_HEADS = (
@@ -83,6 +133,46 @@ SPECIAL_DERIVATIVE_HEADS = (
     ("Sinc3Sqrt", "Sinc3SqrtD"),
     ("Sinc3SqrtD", "Sinc3SqrtDD"),
 )
+
+SPECIAL_FUNCTION_HEADS = ("AffineCosMoment", "AffineSinMoment")
+
+
+def _affine_complex_moment(order: int, c0: float, c1: float, xi: float) -> complex:
+    """Evaluate the entire affine-phase moment by its convergent power series."""
+    if order < 0:
+        raise ValueError("affine moment order must be nonnegative")
+    if xi == 0.0:
+        return 0.0j
+    # exp(i*c0*v + i*c1*v^2/2) = sum a_m*v^m, with the recurrence below.
+    a_previous_previous = 0.0j
+    a_previous = 1.0 + 0.0j
+    total = xi ** (order + 1) / (order + 1)
+    small_terms = 0
+    for degree in range(1, 257):
+        coefficient = (
+            1j * c0 * a_previous
+            + (1j * c1 * a_previous_previous if degree >= 2 else 0.0j)
+        ) / degree
+        term = coefficient * xi ** (degree + order + 1) / (degree + order + 1)
+        total += term
+        if abs(term) <= 2e-16 * max(1.0, abs(total)):
+            small_terms += 1
+            if small_terms >= 4:
+                break
+        else:
+            small_terms = 0
+        a_previous_previous, a_previous = a_previous, coefficient
+    else:
+        raise ArithmeticError("affine moment series did not converge")
+    return total
+
+
+def affine_cos_moment(order: int, c0: float, c1: float, xi: float) -> float:
+    return float(_affine_complex_moment(int(order), float(c0), float(c1), float(xi)).real)
+
+
+def affine_sin_moment(order: int, c0: float, c1: float, xi: float) -> float:
+    return float(_affine_complex_moment(int(order), float(c0), float(c1), float(xi)).imag)
 
 
 def _series_sinc(z: float) -> float:
@@ -195,4 +285,6 @@ LAMBDA_MODULES = {
     "Sinc3Sqrt": sinc3_sqrt,
     "Sinc3SqrtD": sinc3_sqrt_d,
     "Sinc3SqrtDD": sinc3_sqrt_dd,
+    "AffineCosMoment": affine_cos_moment,
+    "AffineSinMoment": affine_sin_moment,
 }

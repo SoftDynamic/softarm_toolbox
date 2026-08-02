@@ -44,6 +44,16 @@ def _cosserat_position(q, xi, length=0.5):
     return left_jacobian @ (length * xi * nu)
 
 
+def _pac_position(q, xi, length=0.5):
+    c0, c1, phi = q
+    nodes, weights = np.polynomial.legendre.leggauss(60)
+    samples = xi * (nodes + 1.0) / 2.0
+    alpha = c0 * samples + 0.5 * c1 * samples**2
+    sine = xi * np.dot(weights, np.sin(alpha)) / 2.0
+    cosine = xi * np.dot(weights, np.cos(alpha)) / 2.0
+    return length * np.array([np.cos(phi) * sine, np.sin(phi) * sine, cosine])
+
+
 def test_distributed_mass_matches_independent_numerical_quadrature():
     config = ModelConfig(
         rod="extensible_kirchhoff", parameterization="pcs", segments=1,
@@ -87,6 +97,53 @@ def test_coriolis_term_satisfies_energy_identity():
         mdot += plant.mass.diff(coordinate) * plant.dq[index]
     residual = (plant.dq.T * (coriolis-sp.Rational(1,2)*mdot*plant.dq))[0]
     evaluate = sp.lambdify((plant.q, plant.dq, plant.p), residual, [LAMBDA_MODULES, "numpy"])
+    assert abs(float(evaluate(q, dq, p))) < 1e-10
+
+
+def test_pac_distributed_mass_and_coriolis_energy_identity():
+    distributed = derive(ModelConfig(
+        rod="euler_bernoulli", parameterization="pac", segments=1,
+        inertia="distributed", integration=IntegrationConfig("gauss", 6),
+        parameters={
+            "length": 0.5, "mass": 1.0,
+            "Ixx": 0.0, "Iyy": 0.0, "Izz": 0.0,
+            "tip_mass": 0.0, "tip_Ixx": 0.0, "tip_Iyy": 0.0, "tip_Izz": 0.0,
+        },
+    ))
+    q = np.array([0.3, -0.2, 0.4])
+    p = np.array([item.default for item in distributed.parameters])
+    symbolic = np.asarray(sp.lambdify(
+        (distributed.q, distributed.p), distributed.mass, [LAMBDA_MODULES, "numpy"]
+    )(q, p), dtype=float)
+    nodes, weights = np.polynomial.legendre.leggauss(30)
+    independent = np.zeros((3, 3))
+    step = 2e-6
+    for node, weight in zip((nodes + 1) / 2, weights / 2, strict=True):
+        jacobian = np.zeros((3, 3))
+        for column in range(3):
+            delta = np.zeros(3)
+            delta[column] = step
+            jacobian[:, column] = (
+                _pac_position(q + delta, node) - _pac_position(q - delta, node)
+            ) / (2 * step)
+        independent += weight * jacobian.T @ jacobian
+    np.testing.assert_allclose(symbolic, independent, rtol=2e-8, atol=2e-10)
+
+    lumped = derive(ModelConfig(
+        rod="euler_bernoulli", parameterization="pac", segments=1,
+        inertia="lumped", integration=IntegrationConfig(),
+    ))
+    dq = np.array([0.03, -0.02, 0.01])
+    p = np.array([item.default for item in lumped.parameters])
+    conservative = sp.Matrix([lumped.potential]).jacobian(lumped.q).T
+    coriolis = lumped.bias - conservative - lumped.damping * lumped.dq
+    mdot = sp.zeros(len(lumped.q))
+    for index, coordinate in enumerate(lumped.q):
+        mdot += lumped.mass.diff(coordinate) * lumped.dq[index]
+    residual = (lumped.dq.T * (coriolis - sp.Rational(1, 2) * mdot * lumped.dq))[0]
+    evaluate = sp.lambdify(
+        (lumped.q, lumped.dq, lumped.p), residual, [LAMBDA_MODULES, "numpy"]
+    )
     assert abs(float(evaluate(q, dq, p))) < 1e-10
 
 

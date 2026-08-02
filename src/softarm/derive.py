@@ -10,6 +10,7 @@ from .config import ConfigError, ModelConfig, _validate_ritz, broadcast
 from .dynamics import SympyBatchDifferentiator, assemble_bias
 from .geometry import (
     angular_jacobian,
+    pac_transform,
     pcs_transform,
     polynomial,
     ritz_transform,
@@ -116,6 +117,23 @@ def _arm_coordinates(
     return sp.Matrix(sp.symbols(" ".join(names), real=True)), sp.Matrix(sp.symbols(" ".join(velocity_names), real=True))
 
 
+def _pac_arm_coordinates(
+    config: ModelConfig, extensible: bool
+) -> tuple[sp.Matrix, sp.Matrix]:
+    names: list[str] = []
+    velocity_names: list[str] = []
+    for section in range(1, config.segments + 1):
+        section_names = [f"c0_{section}", f"c1_{section}", f"phi{section}"]
+        if extensible:
+            section_names.append(f"l{section}")
+        names.extend(section_names)
+        velocity_names.extend(f"d{name}" for name in section_names)
+    return (
+        sp.Matrix(sp.symbols(" ".join(names), real=True)),
+        sp.Matrix(sp.symbols(" ".join(velocity_names), real=True)),
+    )
+
+
 def _base_coordinates(config: ModelConfig) -> tuple[sp.Matrix, sp.Matrix]:
     if config.base.mode == "fixed":
         return sp.zeros(0, 1), sp.zeros(0, 1)
@@ -187,7 +205,7 @@ def _derive_common(
     lengths: list[sp.Symbol],
     masses: list[sp.Symbol],
     inertias: list[sp.Matrix],
-    damping: list[sp.Expr],
+    damping: list[sp.Expr] | sp.Matrix,
     elastic: sp.Expr,
     distributed: bool,
     linear_kinematics: bool = False,
@@ -324,10 +342,15 @@ def _derive_common(
     arm_force_map = sp.zeros(nq, len(arm_q))
     if len(arm_q):
         arm_force_map[len(base_q):, :] = sp.eye(len(arm_q))
-    full_damping = [sp.S.Zero] * len(base_q) + damping
+    full_damping = sp.zeros(nq)
+    arm_damping = sp.diag(*damping) if isinstance(damping, list) else damping
+    if arm_damping.shape != (len(arm_q), len(arm_q)):
+        raise ValueError("arm damping matrix has inconsistent dimensions")
+    if len(arm_q):
+        full_damping[len(base_q):, len(base_q):] = arm_damping
     return SymbolicPlant(
         config, q, dq, base_q, base_dq, arm_q, arm_dq,
-        tuple(parameters.items), mass_matrix, potential, sp.diag(*full_damping),
+        tuple(parameters.items), mass_matrix, potential, full_damping,
         kinematics, end_jacobian, base_transform, base, base_jacobian,
         vehicle_wrench_map, arm_force_map,
         _material_coordinate=xi, _material_kinematics=material_kinematics,
@@ -536,6 +559,117 @@ def _derive_extensible_kirchhoff_ritz(config: ModelConfig) -> SymbolicPlant:
     )
 
 
+def _pac_hankel() -> sp.Matrix:
+    return sp.Matrix([
+        [sp.S.One, sp.Rational(1, 2)],
+        [sp.Rational(1, 2), sp.Rational(1, 3)],
+    ])
+
+
+def _derive_euler_bernoulli_pac(config: ModelConfig) -> SymbolicPlant:
+    q, dq = _pac_arm_coordinates(config, extensible=False)
+    pb = _ParameterBuilder(config)
+    lengths = pb.sections("length", 0.5)
+    masses = pb.sections("mass", 0.2)
+    ixx = pb.sections("Ixx", 0.002)
+    iyy = pb.sections("Iyy", 0.002)
+    izz = pb.sections("Izz", 0.0001)
+    eix = pb.sections("EI_x", 1.2)
+    eiy = pb.sections("EI_y", 1.2)
+    gj = pb.sections("GJ", 0.2)
+    dbx = pb.sections("d_bx", 0.05)
+    dby = pb.sections("d_by", 0.05)
+    dphi = pb.sections("d_phi", 0.02)
+    inertias = [sp.diag(ixx[i], iyy[i], izz[i]) for i in range(config.segments)]
+
+    def local(section: int, xi: sp.Expr) -> sp.Matrix:
+        offset = 3 * section
+        return pac_transform(
+            q[offset], q[offset + 1], q[offset + 2], lengths[section], xi
+        )
+
+    hankel = _pac_hankel()
+    elastic = sp.S.Zero
+    damping = sp.zeros(len(q))
+    for section in range(config.segments):
+        offset = 3 * section
+        c = q[offset:offset + 2, 0]
+        phi = q[offset + 2]
+        directional_stiffness = (
+            eiy[section] * sp.cos(phi) ** 2
+            + eix[section] * sp.sin(phi) ** 2
+        ) / lengths[section]
+        elastic += (
+            sp.Rational(1, 2) * directional_stiffness * (c.T * hankel * c)[0]
+            + sp.Rational(1, 2) * gj[section] * phi**2 / lengths[section]
+        )
+        directional_damping = (
+            dbx[section] * sp.cos(phi) ** 2
+            + dby[section] * sp.sin(phi) ** 2
+        )
+        damping[offset:offset + 2, offset:offset + 2] = directional_damping * hankel
+        damping[offset + 2, offset + 2] = dphi[section]
+    return _derive_common(
+        config, q, dq, pb, local, lengths, masses, inertias, damping,
+        elastic, config.inertia == "distributed",
+    )
+
+
+def _derive_extensible_kirchhoff_pac(config: ModelConfig) -> SymbolicPlant:
+    q, dq = _pac_arm_coordinates(config, extensible=True)
+    pb = _ParameterBuilder(config)
+    lengths = pb.sections("rest_length", 0.5)
+    masses = pb.sections("mass", 0.2)
+    ixx = pb.sections("Ixx", 0.002)
+    iyy = pb.sections("Iyy", 0.002)
+    izz = pb.sections("Izz", 0.0001)
+    kbx = pb.sections("k_bx", 1.2)
+    kby = pb.sections("k_by", 1.2)
+    kphi = pb.sections("k_phi", 0.2)
+    kl = pb.sections("k_l", 50.0)
+    dbx = pb.sections("d_bx", 0.05)
+    dby = pb.sections("d_by", 0.05)
+    dphi = pb.sections("d_phi", 0.02)
+    dl = pb.sections("d_l", 0.1)
+    inertias = [sp.diag(ixx[i], iyy[i], izz[i]) for i in range(config.segments)]
+
+    def local(section: int, xi: sp.Expr) -> sp.Matrix:
+        offset = 4 * section
+        return pac_transform(
+            q[offset], q[offset + 1], q[offset + 2], q[offset + 3], xi
+        )
+
+    hankel = _pac_hankel()
+    elastic = sp.S.Zero
+    damping = sp.zeros(len(q))
+    for section in range(config.segments):
+        offset = 4 * section
+        c = q[offset:offset + 2, 0]
+        phi = q[offset + 2]
+        current_length = q[offset + 3]
+        directional_stiffness = (
+            kbx[section] * sp.cos(phi) ** 2
+            + kby[section] * sp.sin(phi) ** 2
+        )
+        elastic += (
+            sp.Rational(1, 2) * directional_stiffness * (c.T * hankel * c)[0]
+            + sp.Rational(1, 2) * kphi[section] * phi**2
+            + sp.Rational(1, 2) * kl[section]
+            * (current_length - lengths[section]) ** 2
+        )
+        directional_damping = (
+            dbx[section] * sp.cos(phi) ** 2
+            + dby[section] * sp.sin(phi) ** 2
+        )
+        damping[offset:offset + 2, offset:offset + 2] = directional_damping * hankel
+        damping[offset + 2, offset + 2] = dphi[section]
+        damping[offset + 3, offset + 3] = dl[section]
+    return _derive_common(
+        config, q, dq, pb, local, lengths, masses, inertias, damping,
+        elastic, config.inertia == "distributed",
+    )
+
+
 def _derive_cosserat_pcs(config: ModelConfig) -> SymbolicPlant:
     q, dq = _arm_coordinates(config, ("kx", "ky", "kz", "vx", "vy", "vz"))
     pb = _ParameterBuilder(config)
@@ -655,6 +789,20 @@ def _validate_cosserat_pcs(config: ModelConfig) -> None:
         raise ConfigError("integration is not applicable to lumped cosserat + pcs inertia")
 
 
+def _validate_pac(config: ModelConfig) -> None:
+    _validate_no_ritz_options(config)
+    if config.inertia == "distributed":
+        if config.integration.method != "gauss":
+            raise ConfigError("distributed PAC inertia requires integration.method='gauss'")
+        if config.integration.order is None or config.integration.order < 4:
+            raise ConfigError("distributed PAC inertia requires Gauss order at least 4")
+    elif config.inertia == "lumped":
+        if config.integration.method != "analytic":
+            raise ConfigError("integration is not applicable to lumped PAC inertia")
+    else:
+        raise ConfigError("PAC inertia must be 'distributed' or 'lumped'")
+
+
 _CACHE: dict[str, SymbolicPlant] = {}
 
 
@@ -670,6 +818,12 @@ _MODELS: dict[tuple[str, str], RegisteredModel] = {
     ),
     ("extensible_kirchhoff", "pcs"): RegisteredModel(
         _derive_extensible_kirchhoff_pcs, _validate_pcs_inertia
+    ),
+    ("euler_bernoulli", "pac"): RegisteredModel(
+        _derive_euler_bernoulli_pac, _validate_pac
+    ),
+    ("extensible_kirchhoff", "pac"): RegisteredModel(
+        _derive_extensible_kirchhoff_pac, _validate_pac
     ),
     ("cosserat", "pcs"): RegisteredModel(
         _derive_cosserat_pcs, _validate_cosserat_pcs

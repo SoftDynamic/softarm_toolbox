@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import sympy as sp
 
-from .special import CoscSqrt, Sinc3Sqrt, SincSqrt
+from .special import (
+    AffineCosMoment,
+    AffineSinMoment,
+    CoscSqrt,
+    Sinc3Sqrt,
+    SincSqrt,
+)
 
 
 def homogeneous(rotation: sp.Matrix, position: sp.Matrix) -> sp.Matrix:
@@ -79,6 +85,32 @@ def ritz_transform(
         [-slope_x, -slope_y, 1],
     ])
     position = sp.Matrix([ax * psi_x, ay * psi_y, length * xi + az * psi_z])
+    return homogeneous(rotation, position)
+
+
+def pac_transform(
+    c0: sp.Expr,
+    c1: sp.Expr,
+    phi: sp.Expr,
+    length: sp.Expr,
+    xi: sp.Expr = sp.S.One,
+) -> sp.Matrix:
+    """Paper-faithful 3D piecewise-affine-curvature transform."""
+    alpha = c0 * xi + sp.Rational(1, 2) * c1 * xi**2
+    ca, sa = sp.cos(alpha), sp.sin(alpha)
+    cp, sp_ = sp.cos(phi), sp.sin(phi)
+    rotation = sp.Matrix([
+        [ca * cp, -sp_, sa * cp],
+        [ca * sp_, cp, sa * sp_],
+        [-sa, 0, ca],
+    ])
+    cosine_integral = AffineCosMoment(0, c0, c1, xi)
+    sine_integral = AffineSinMoment(0, c0, c1, xi)
+    position = length * sp.Matrix([
+        cp * sine_integral,
+        sp_ * sine_integral,
+        cosine_integral,
+    ])
     return homogeneous(rotation, position)
 
 

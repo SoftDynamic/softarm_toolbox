@@ -18,7 +18,7 @@ from softarm.config import (
 )
 from softarm.constraints import derive_constraint
 from softarm.derive import derive
-from softarm.geometry import pcs_transform
+from softarm.geometry import pac_transform, pcs_transform
 
 ROOT = Path(__file__).parents[1]
 
@@ -43,6 +43,12 @@ def test_ast_round_trip_preserves_cosserat_special_functions():
     expression = pcs_transform(
         sp.Matrix(symbols[:3]), sp.Matrix(symbols[3:6]), symbols[6]
     )[0, 3]
+    assert decode_dag(encode_dag([expression])) == [expression]
+
+
+def test_ast_round_trip_preserves_pac_moment_functions():
+    c0, c1, phi, length, xi = sp.symbols("c0 c1 phi length xi", real=True)
+    expression = pac_transform(c0, c1, phi, length, xi)[0, 3]
     assert decode_dag(encode_dag([expression])) == [expression]
 
 
@@ -71,6 +77,27 @@ def test_minimal_manifest_and_fixed_functions(tmp_path):
     assert r"\begin{document}" in document
     assert document.endswith("\\end{document}\n")
     assert "Exact Symbolic Appendix" not in document
+
+
+def test_pac_bundle_contains_moment_helpers_and_public_coordinates(tmp_path):
+    plant = derive(ModelConfig(
+        rod="extensible_kirchhoff", parameterization="pac", segments=1,
+        inertia="lumped", integration=IntegrationConfig(),
+    ))
+    generate_matlab_bundle(plant, tmp_path)
+    manifest = json.loads((tmp_path / "manifest.json").read_text())
+    assert manifest["coordinates"]["arm"] == ["c0_1", "c1_1", "phi1", "l1"]
+    assert manifest["model"]["parameterization"] == "pac"
+    for filename in (
+        "softarm_affine_cos_moment.m",
+        "softarm_affine_sin_moment.m",
+        "softarm_affine_moment_parts.m",
+    ):
+        assert (tmp_path / filename).is_file()
+    assert "softarm_affine_" in (tmp_path / "softarm_kinematics.m").read_text()
+    document = (tmp_path / "softarm_model.tex").read_text(encoding="utf-8")
+    assert "Piecewise-Affine-Curvature" in document
+    assert r"R_i(0)=R_z(\phi_i)" in document
 
 
 def test_bundle_without_material_kinematics_omits_centerline(tmp_path):

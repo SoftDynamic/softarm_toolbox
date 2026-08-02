@@ -5,6 +5,20 @@ ClearAll[
   requestParameter, requestTimeout, executeRequest, cseData
 ];
 
+(* Generic analytic derivatives for the affine-phase integral heads. *)
+AffineCosMoment /: Derivative[0, 1, 0, 0][AffineCosMoment] =
+  Function[{n, c0, c1, xi}, -AffineSinMoment[n + 1, c0, c1, xi]];
+AffineCosMoment /: Derivative[0, 0, 1, 0][AffineCosMoment] =
+  Function[{n, c0, c1, xi}, -AffineSinMoment[n + 2, c0, c1, xi]/2];
+AffineCosMoment /: Derivative[0, 0, 0, 1][AffineCosMoment] =
+  Function[{n, c0, c1, xi}, xi^n Cos[c0 xi + c1 xi^2/2]];
+AffineSinMoment /: Derivative[0, 1, 0, 0][AffineSinMoment] =
+  Function[{n, c0, c1, xi}, AffineCosMoment[n + 1, c0, c1, xi]];
+AffineSinMoment /: Derivative[0, 0, 1, 0][AffineSinMoment] =
+  Function[{n, c0, c1, xi}, AffineCosMoment[n + 2, c0, c1, xi]/2];
+AffineSinMoment /: Derivative[0, 0, 0, 1][AffineSinMoment] =
+  Function[{n, c0, c1, xi}, xi^n Sin[c0 xi + c1 xi^2/2]];
+
 resetRequest[] := (
   symbolByOriginal = <||>;
   originalBySymbol = <||>;

@@ -12,7 +12,7 @@ from pathlib import Path
 
 import sympy as sp
 
-from ..special import SPECIAL_DERIVATIVE_HEADS
+from ..special import SPECIAL_DERIVATIVE_HEADS, SPECIAL_FUNCTION_HEADS
 from .protocol import decode_dag, encode_dag
 
 
@@ -190,7 +190,9 @@ class WolframKernel(AbstractContextManager["WolframKernel"]):
             for expression in canonical
             for node in sp.preorder_traversal(expression)
             if isinstance(node, sp.Function)
-        } | {derivative for _, derivative in SPECIAL_DERIVATIVE_HEADS}
+        } | {derivative for _, derivative in SPECIAL_DERIVATIVE_HEADS} | set(
+            SPECIAL_FUNCTION_HEADS
+        )
         for expression in decoded:
             unexpected = {str(item) for item in expression.free_symbols} - allowed
             if unexpected:

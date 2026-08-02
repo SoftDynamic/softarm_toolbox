@@ -122,6 +122,42 @@ def test_strict_acceleration_rejects_dependent_or_excess_channels():
     assert derive_actuation(plant, ActuationConfig("tendon", "none", channels)).count == 7
 
 
+def test_pac_tendon_coordinate_virtual_work_and_straight_rank_policy():
+    plant = derive(load_config(
+        ROOT / "examples/config/extensible_kirchhoff_pac_distributed_n2.toml"
+    ))
+    routing = ActuationConfig("tendon", "none", (
+        TendonChannelConfig(
+            "physical", "unilateral", (TendonSpanConfig(1, 0.02, 0.3),)
+        ),
+        TendonChannelConfig(
+            "signed", "signed", (TendonSpanConfig(1, 0.02, -0.4),)
+        ),
+    ))
+    actuation = derive_actuation(plant, routing)
+    assert actuation is not None
+    c0, c1, phi, length = plant.arm_q[:4]
+    radius = actuation.parameters[0].symbol
+    expected_bend = (c0 + c1 / 2) * sp.cos(sp.Float("0.3") - phi)
+    assert sp.simplify(actuation.coordinates[0] - (length - radius * expected_bend)) == 0
+    assert sp.diff(actuation.coordinates[1], length) == 0
+
+    strict_one = ActuationConfig("tendon", "strict", (
+        TendonChannelConfig(
+            "one", "signed", (TendonSpanConfig(1, 0.02, 0.0),)
+        ),
+    ))
+    assert derive_actuation(plant, strict_one) is not None
+    strict_two_directions = ActuationConfig("tendon", "strict", (
+        TendonChannelConfig("x", "signed", (TendonSpanConfig(1, 0.02, 0.0),)),
+        TendonChannelConfig(
+            "y", "signed", (TendonSpanConfig(1, 0.02, float(np.pi / 2)),)
+        ),
+    ))
+    with pytest.raises(ValueError, match="full-row-rank"):
+        derive_actuation(plant, strict_two_directions)
+
+
 def test_custom_actuator_builder_registration():
     plant = derive(load_config(
         ROOT / "examples/config/extensible_kirchhoff_pcs_lumped_n2.toml"
