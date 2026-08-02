@@ -81,7 +81,7 @@ def test_minimal_manifest_and_fixed_functions(tmp_path):
 
 def test_pac_bundle_contains_moment_helpers_and_public_coordinates(tmp_path):
     plant = derive(ModelConfig(
-        rod="extensible_kirchhoff", parameterization="pac", segments=1,
+        rod="extensible_euler_bernoulli", parameterization="pac", segments=1,
         inertia="lumped", integration=IntegrationConfig(),
     ))
     generate_matlab_bundle(plant, tmp_path)
@@ -130,7 +130,7 @@ def test_manifest_preserves_nonzero_base_mount(tmp_path):
 
 def test_actuated_bundle_keeps_minimal_manifest_and_generic_functions(tmp_path):
     config = load_config(
-        ROOT / "examples/config/extensible_kirchhoff_pcs_three_tendon_n2.toml"
+        ROOT / "examples/config/extensible_euler_bernoulli_pcs_three_tendon_n2.toml"
     )
     plant = derive(config)
     actuation = derive_actuation(plant)

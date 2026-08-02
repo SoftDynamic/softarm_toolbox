@@ -12,7 +12,7 @@ ROOT = Path(__file__).parents[1]
 
 def _three_tendon():
     plant = derive(load_config(
-        ROOT / "examples/config/extensible_kirchhoff_pcs_three_tendon_n2.toml"
+        ROOT / "examples/config/extensible_euler_bernoulli_pcs_three_tendon_n2.toml"
     ))
     actuation = derive_actuation(plant)
     assert actuation is not None
@@ -67,7 +67,7 @@ def test_three_tendon_axial_mode_jacobian_and_virtual_work():
 
 def test_signed_channels_allow_negative_tension_and_have_no_axial_action():
     plant = derive(load_config(
-        ROOT / "examples/config/extensible_kirchhoff_pcs_signed_pair_n2.toml"
+        ROOT / "examples/config/extensible_euler_bernoulli_pcs_signed_pair_n2.toml"
     ))
     actuation = derive_actuation(plant)
     assert actuation is not None
@@ -103,7 +103,7 @@ def test_euler_uses_ritz_end_slope_without_axial_coordinate():
 
 def test_strict_acceleration_rejects_dependent_or_excess_channels():
     plant = derive(load_config(
-        ROOT / "examples/config/extensible_kirchhoff_pcs_lumped_n2.toml"
+        ROOT / "examples/config/extensible_euler_bernoulli_pcs_lumped_n2.toml"
     ))
     span = (TendonSpanConfig(1, 0.02, 0.0),)
     dependent = ActuationConfig("tendon", "strict", (
@@ -124,7 +124,7 @@ def test_strict_acceleration_rejects_dependent_or_excess_channels():
 
 def test_pac_tendon_coordinate_virtual_work_and_straight_rank_policy():
     plant = derive(load_config(
-        ROOT / "examples/config/extensible_kirchhoff_pac_distributed_n2.toml"
+        ROOT / "examples/config/extensible_euler_bernoulli_pac_distributed_n2.toml"
     ))
     routing = ActuationConfig("tendon", "none", (
         TendonChannelConfig(
@@ -160,7 +160,7 @@ def test_pac_tendon_coordinate_virtual_work_and_straight_rank_policy():
 
 def test_custom_actuator_builder_registration():
     plant = derive(load_config(
-        ROOT / "examples/config/extensible_kirchhoff_pcs_lumped_n2.toml"
+        ROOT / "examples/config/extensible_euler_bernoulli_pcs_lumped_n2.toml"
     ))
 
     def builder(symbolic_plant, config):

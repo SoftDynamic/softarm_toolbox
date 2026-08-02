@@ -31,7 +31,7 @@ def test_wolfram_end_to_end(monkeypatch, tmp_path):
     )
     x = sp.Symbol("x", real=True, nonnegative=True)
     plant = derive(ModelConfig(
-        rod="extensible_kirchhoff", parameterization="pcs", segments=1,
+        rod="extensible_euler_bernoulli", parameterization="pcs", segments=1,
         inertia="lumped",
         integration=IntegrationConfig(),
     ))

@@ -73,7 +73,7 @@ def _tendon_builder(
             parameters.append(RuntimeParameter(parameter_name, radius, span.radius))
             cosine = sp.cos(sp.Float(str(span.angle)))
             sine = sp.sin(sp.Float(str(span.angle)))
-            if combination == ("extensible_kirchhoff", "pcs"):
+            if combination == ("extensible_euler_bernoulli", "pcs"):
                 offset = 3 * section
                 bending = plant.arm_q[offset] * cosine + plant.arm_q[offset + 1] * sine
                 if channel.kind == "unilateral":
@@ -96,7 +96,7 @@ def _tendon_builder(
                 if channel.kind == "unilateral":
                     coordinate += length
                 coordinate -= radius * bending
-            elif combination == ("extensible_kirchhoff", "ritz"):
+            elif combination == ("extensible_euler_bernoulli", "ritz"):
                 offset = 3 * section
                 length = plant_parameters[f"s{span.section}_rest_length"]
                 bending = (
@@ -116,7 +116,7 @@ def _tendon_builder(
                 if channel.kind == "unilateral":
                     coordinate += length
                 coordinate -= radius * bending
-            elif combination == ("extensible_kirchhoff", "pac"):
+            elif combination == ("extensible_euler_bernoulli", "pac"):
                 offset = 4 * section
                 total_bend = plant.arm_q[offset] + plant.arm_q[offset + 1] / 2
                 bending = total_bend * sp.cos(
@@ -194,8 +194,8 @@ def _validate_strict_rank(plant: SymbolicPlant, actuation: ActuationModel) -> No
     }
     reference = {coordinate: 0.0 for coordinate in plant.arm_q}
     if (plant.config.rod, plant.config.parameterization) in {
-        ("extensible_kirchhoff", "pcs"),
-        ("extensible_kirchhoff", "pac"),
+        ("extensible_euler_bernoulli", "pcs"),
+        ("extensible_euler_bernoulli", "pac"),
     }:
         stride = 3 if plant.config.parameterization == "pcs" else 4
         length_offset = 2 if plant.config.parameterization == "pcs" else 3

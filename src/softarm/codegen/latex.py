@@ -299,7 +299,7 @@ def _kinematics(plant: SymbolicPlant, printer: SoftArmLatexPrinter) -> str:
                 r"\kappa_i=[-b_{y,i}/L_i,\ b_{x,i}/L_i,\ 0]^T,\qquad"
                 r"\nu_i=[0,0,1]^T"
             ))
-        elif combination == ("extensible_kirchhoff", "pcs"):
+        elif combination == ("extensible_euler_bernoulli", "pcs"):
             lines.append(_equation(
                 r"\kappa_i=[-b_{y,i}/L_{0,i},\ b_{x,i}/L_{0,i},\ 0]^T,\qquad"
                 r"\nu_i=[0,0,l_i/L_{0,i}]^T"
@@ -331,7 +331,7 @@ def _kinematics(plant: SymbolicPlant, printer: SoftArmLatexPrinter) -> str:
         psi_x = polynomial(plant.config.ritz_x or (), xi)
         psi_y = polynomial(plant.config.ritz_y or (), xi)
         psi_z = polynomial(plant.config.ritz_z or (), xi)
-        selected_az = az if plant.config.rod == "extensible_kirchhoff" else sp.S.Zero
+        selected_az = az if plant.config.rod == "extensible_euler_bernoulli" else sp.S.Zero
         lines.extend([
             r"\subsection{Ritz Parameterization}",
             _equation(
@@ -442,7 +442,7 @@ def _energy_and_dynamics(plant: SymbolicPlant, printer: SoftArmLatexPrinter) -> 
         _equation(r"V=V_g+V_{\mathrm{elastic}},\qquad V_g=-g\!\left(" + gravity_terms + r"\right)"),
     ])
     combination = (plant.config.rod, plant.config.parameterization)
-    if combination == ("extensible_kirchhoff", "pcs"):
+    if combination == ("extensible_euler_bernoulli", "pcs"):
         lines.append(_equation(
             r"V_{\mathrm{elastic}}=\frac12\sum_{i=1}^{N}\left("
             r"k_{b_x,i}b_{x,i}^{2}+k_{b_y,i}b_{y,i}^{2}+k_{L,i}(L_i-L_{0,i})^2\right)"
@@ -458,7 +458,7 @@ def _energy_and_dynamics(plant: SymbolicPlant, printer: SoftArmLatexPrinter) -> 
             r"\frac{EI_{y,i}a_{x,i}^{2}}{L_i^3}\int_0^1(\psi_x'')^2d\xi+"
             r"\frac{EI_{x,i}a_{y,i}^{2}}{L_i^3}\int_0^1(\psi_y'')^2d\xi\right]"
         ))
-    elif combination == ("extensible_kirchhoff", "ritz"):
+    elif combination == ("extensible_euler_bernoulli", "ritz"):
         lines.append(_equation(
             r"V_{\mathrm{elastic}}=\frac12\sum_{i=1}^{N}\left["
             r"\frac{EI_{y,i}a_{x,i}^{2}}{L_i^3}\int_0^1(\psi_x'')^2d\xi+"
@@ -479,7 +479,7 @@ def _energy_and_dynamics(plant: SymbolicPlant, printer: SoftArmLatexPrinter) -> 
             r"c_i^THc_i+\frac{GJ_i}{L_i}\phi_i^2\right],\qquad "
             r"H=\begin{bmatrix}1&1/2\\1/2&1/3\end{bmatrix}"
         ))
-    elif combination == ("extensible_kirchhoff", "pac"):
+    elif combination == ("extensible_euler_bernoulli", "pac"):
         lines.append(_equation(
             r"V_{\mathrm{elastic}}=\frac12\sum_{i=1}^{N}\left["
             r"(k_{b_x,i}\cos^2\phi_i+k_{b_y,i}\sin^2\phi_i)c_i^THc_i+"

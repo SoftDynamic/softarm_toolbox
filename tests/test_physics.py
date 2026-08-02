@@ -56,7 +56,7 @@ def _pac_position(q, xi, length=0.5):
 
 def test_distributed_mass_matches_independent_numerical_quadrature():
     config = ModelConfig(
-        rod="extensible_kirchhoff", parameterization="pcs", segments=1,
+        rod="extensible_euler_bernoulli", parameterization="pcs", segments=1,
         inertia="distributed", integration=IntegrationConfig("gauss", 4),
         parameters={
             "mass": 1.0, "Ixx": 0.0, "Iyy": 0.0, "Izz": 0.0,
@@ -83,7 +83,7 @@ def test_distributed_mass_matches_independent_numerical_quadrature():
 
 def test_coriolis_term_satisfies_energy_identity():
     config = ModelConfig(
-        rod="extensible_kirchhoff", parameterization="pcs", segments=1,
+        rod="extensible_euler_bernoulli", parameterization="pcs", segments=1,
         inertia="lumped", integration=IntegrationConfig(),
     )
     plant = derive(config)

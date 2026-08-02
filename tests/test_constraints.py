@@ -9,7 +9,7 @@ from softarm.special import LAMBDA_MODULES
 
 def _contact(friction: float = 0.3):
     config = ModelConfig(
-        rod="extensible_kirchhoff",
+        rod="extensible_euler_bernoulli",
         parameterization="pcs",
         segments=1,
         inertia="lumped",

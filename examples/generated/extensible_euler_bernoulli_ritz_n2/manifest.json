@@ -1,7 +1,7 @@
 {
   "model": {
-    "rod": "extensible_kirchhoff",
-    "parameterization": "pcs",
+    "rod": "extensible_euler_bernoulli",
+    "parameterization": "ritz",
     "segments": 2,
     "base_mode": "fixed",
     "mount_xyz": [
@@ -19,12 +19,12 @@
   "coordinates": {
     "base": [],
     "arm": [
-      "bx1",
-      "by1",
-      "l1",
-      "bx2",
-      "by2",
-      "l2"
+      "ax1",
+      "ay1",
+      "az1",
+      "ax2",
+      "ay2",
+      "az2"
     ]
   },
   "parameters": [
@@ -69,51 +69,51 @@
       "default": 0.00011
     },
     {
-      "name": "s1_k_bx",
+      "name": "s1_EI_x",
       "default": 1.1
     },
     {
-      "name": "s2_k_bx",
+      "name": "s2_EI_x",
       "default": 1.2
     },
     {
-      "name": "s1_k_by",
+      "name": "s1_EI_y",
       "default": 1.1
     },
     {
-      "name": "s2_k_by",
+      "name": "s2_EI_y",
       "default": 1.2
     },
     {
-      "name": "s1_k_l",
+      "name": "s1_EA",
       "default": 45.0
     },
     {
-      "name": "s2_k_l",
+      "name": "s2_EA",
       "default": 50.0
     },
     {
-      "name": "s1_d_bx",
+      "name": "s1_d_ax",
       "default": 0.05
     },
     {
-      "name": "s2_d_bx",
+      "name": "s2_d_ax",
       "default": 0.05
     },
     {
-      "name": "s1_d_by",
+      "name": "s1_d_ay",
       "default": 0.05
     },
     {
-      "name": "s2_d_by",
+      "name": "s2_d_ay",
       "default": 0.05
     },
     {
-      "name": "s1_d_l",
+      "name": "s1_d_az",
       "default": 0.1
     },
     {
-      "name": "s2_d_l",
+      "name": "s2_d_az",
       "default": 0.1
     },
     {
@@ -135,49 +135,8 @@
     {
       "name": "tip_Izz",
       "default": 0.01
-    },
-    {
-      "name": "act_t1_s1_radius",
-      "default": 0.0275
-    },
-    {
-      "name": "act_t1_s2_radius",
-      "default": 0.03
-    },
-    {
-      "name": "act_t2_s1_radius",
-      "default": 0.0275
-    },
-    {
-      "name": "act_t2_s2_radius",
-      "default": 0.03
-    },
-    {
-      "name": "act_t3_s1_radius",
-      "default": 0.0275
-    },
-    {
-      "name": "act_t3_s2_radius",
-      "default": 0.03
     }
   ],
-  "actuation": {
-    "family": "tendon",
-    "acceleration": "strict",
-    "channels": [
-      {
-        "name": "t1",
-        "kind": "unilateral"
-      },
-      {
-        "name": "t2",
-        "kind": "unilateral"
-      },
-      {
-        "name": "t3",
-        "kind": "unilateral"
-      }
-    ]
-  },
+  "actuation": null,
   "constraint": null
 }

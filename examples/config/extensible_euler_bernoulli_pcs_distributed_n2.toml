@@ -1,15 +1,12 @@
 [model]
-rod = "extensible_kirchhoff"
-parameterization = "ritz"
+rod = "extensible_euler_bernoulli"
+parameterization = "pcs"
 segments = 2
+inertia = "distributed"
 
 [integration]
-method = "analytic"
-
-[ritz]
-x = [0.0, 0.0, 1.5, -0.5]
-y = [0.0, 0.0, 1.5, -0.5]
-z = [0.0, 1.0]
+method = "gauss"
+order = 2
 
 [parameters]
 gravity = 9.81
@@ -18,13 +15,14 @@ mass = [0.18, 0.20]
 Ixx = [0.0018, 0.0020]
 Iyy = [0.0018, 0.0020]
 Izz = [0.00010, 0.00011]
-EI_x = [1.1, 1.2]
-EI_y = [1.1, 1.2]
-EA = [45.0, 50.0]
-d_ax = 0.05
-d_ay = 0.05
-d_az = 0.10
+k_bx = [1.1, 1.2]
+k_by = [1.1, 1.2]
+k_l = [45.0, 50.0]
+d_bx = 0.05
+d_by = 0.05
+d_l = 0.10
 tip_mass = 0.10
 tip_Ixx = 0.01
 tip_Iyy = 0.01
 tip_Izz = 0.01
+

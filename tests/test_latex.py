@@ -62,7 +62,7 @@ def _euler_config(**changes):
 
 def test_document_sections_are_model_specific_and_paper_friendly(tmp_path):
     fixed = derive(ModelConfig(
-        rod="extensible_kirchhoff", parameterization="pcs", segments=1,
+        rod="extensible_euler_bernoulli", parameterization="pcs", segments=1,
         inertia="lumped", integration=IntegrationConfig()
     ))
     first = tmp_path / "first"

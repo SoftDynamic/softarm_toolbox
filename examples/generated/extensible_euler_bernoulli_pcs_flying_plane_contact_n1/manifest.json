@@ -1,6 +1,6 @@
 {
   "model": {
-    "rod": "extensible_kirchhoff",
+    "rod": "extensible_euler_bernoulli",
     "parameterization": "pcs",
     "segments": 1,
     "base_mode": "floating_rpy",

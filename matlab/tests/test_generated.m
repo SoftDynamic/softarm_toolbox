@@ -12,12 +12,12 @@ end
 
 function testReferenceBundles(testCase)
 names = [
-    "extensible_kirchhoff_pcs_lumped_n2", ...
-    "extensible_kirchhoff_pcs_distributed_n2", ...
+    "extensible_euler_bernoulli_pcs_lumped_n2", ...
+    "extensible_euler_bernoulli_pcs_distributed_n2", ...
     "euler_bernoulli_pac_distributed_n2", ...
-    "extensible_kirchhoff_pac_distributed_n2", ...
+    "extensible_euler_bernoulli_pac_distributed_n2", ...
     "euler_bernoulli_ritz_n2","euler_bernoulli_pcs_n2", ...
-    "extensible_kirchhoff_ritz_n2", ...
+    "extensible_euler_bernoulli_ritz_n2", ...
     "cosserat_pcs_lumped_n1","cosserat_pcs_distributed_tendon_n1"
 ];
 for name = names
@@ -146,7 +146,7 @@ end
 function testFloatingBundleBackboneRoot(testCase)
 root = testCase.TestData.root;
 plant = softarm.loadModel(fullfile(root,"examples","generated", ...
-    "extensible_kirchhoff_pcs_flying_plane_contact_n1"));
+    "extensible_euler_bernoulli_pcs_flying_plane_contact_n1"));
 q = zeros(1,plant.nq);
 q(1:6) = [1.1 -2.2 3.3 0.21 -0.31 0.42];
 lengthIndex = find(strcmp({plant.manifest.parameters.name},"s1_rest_length"),1);
@@ -168,9 +168,9 @@ end
 
 function testGeneratedModelCenterlines(testCase)
 root = testCase.TestData.root;
-names = ["extensible_kirchhoff_pcs_lumped_n2", ...
+names = ["extensible_euler_bernoulli_pcs_lumped_n2", ...
     "euler_bernoulli_ritz_n2","euler_bernoulli_pac_distributed_n2", ...
-    "extensible_kirchhoff_pac_distributed_n2","cosserat_pcs_lumped_n1"];
+    "extensible_euler_bernoulli_pac_distributed_n2","cosserat_pcs_lumped_n1"];
 sampleCoordinates = [0.25 0.5 0.75 1.0];
 for name = names
     plant = softarm.loadModel(fullfile(root,"examples","generated",name));
@@ -187,7 +187,7 @@ for name = names
 end
 
 plant = softarm.loadModel(fullfile(root,"examples","generated", ...
-    "extensible_kirchhoff_pcs_lumped_n2"));
+    "extensible_euler_bernoulli_pcs_lumped_n2"));
 q = nominalConfiguration(plant);
 q(1) = 0.35;
 points = plant.centerline(q,plant.parameters,(1:16)/16);
@@ -225,7 +225,7 @@ end
 
 function testPlaybackRejectsPoseStack(testCase)
 bundle = fullfile(testCase.TestData.root,"examples","generated", ...
-    "extensible_kirchhoff_pcs_flying_plane_contact_n1");
+    "extensible_euler_bernoulli_pcs_flying_plane_contact_n1");
 legacyPoseLog = [0 zeros(1,16)];
 verifyError(testCase,@() softarm.playbackBackbonePoses( ...
     legacyPoseLog,Bundle=string(bundle)),"softarm:InvalidQFrames");
@@ -233,7 +233,7 @@ end
 
 function testPlaybackGraphicsAndSampling(testCase)
 bundle = fullfile(testCase.TestData.root,"examples","generated", ...
-    "extensible_kirchhoff_pcs_flying_plane_contact_n1");
+    "extensible_euler_bernoulli_pcs_flying_plane_contact_n1");
 plant = softarm.loadModel(bundle);
 q = zeros(1,plant.nq);
 q(1:6) = [10 20 30 0.2 -0.3 0.4];
@@ -267,7 +267,7 @@ end
 
 function testGeneratedPoseStacks(testCase)
 root = testCase.TestData.root;
-names = ["extensible_kirchhoff_pcs_three_tendon_n2","euler_bernoulli_ritz_n2"];
+names = ["extensible_euler_bernoulli_pcs_three_tendon_n2","euler_bernoulli_ritz_n2"];
 for name = names
     plant = softarm.loadModel(fullfile(root,"examples","generated",name));
     q = zeros(plant.nq,1);
@@ -293,7 +293,7 @@ end
 function testThreeTendonForceAndAxialMode(testCase)
 root = testCase.TestData.root;
 plant = softarm.loadModel(fullfile(root,"examples","generated", ...
-    "extensible_kirchhoff_pcs_three_tendon_n2"));
+    "extensible_euler_bernoulli_pcs_three_tendon_n2"));
 verifyEqual(testCase,plant.actuation.count,3);
 verifyEqual(testCase,cellstr(plant.actuation.names),{'t1','t2','t3'});
 q = [0.01;-0.02;0.46;0.03;0.01;0.51];
@@ -318,7 +318,7 @@ end
 function testThreeTendonAccelerationReference(testCase)
 root = testCase.TestData.root;
 plant = softarm.loadModel(fullfile(root,"examples","generated", ...
-    "extensible_kirchhoff_pcs_three_tendon_n2"));
+    "extensible_euler_bernoulli_pcs_three_tendon_n2"));
 q = [0.01;-0.02;0.46;0.03;0.01;0.51];
 dq = [0.02;0.01;0.001;-0.01;0.03;-0.002];
 command = [0.01;-0.01;0.005];
@@ -341,7 +341,7 @@ end
 function testSignedEquivalentTendon(testCase)
 root = testCase.TestData.root;
 plant = softarm.loadModel(fullfile(root,"examples","generated", ...
-    "extensible_kirchhoff_pcs_signed_pair_n2"));
+    "extensible_euler_bernoulli_pcs_signed_pair_n2"));
 q = [0.01;-0.02;0.46;0.03;0.01;0.51];
 tension = softarm.packActuatorInputs(plant.actuation, ...
     struct("bend_x",-2.0,"bend_y",1.5));
@@ -524,7 +524,7 @@ end
 function testFloatingPlaneContactBundle(testCase)
 root = testCase.TestData.root;
 plant = softarm.loadModel(fullfile(root,"examples","generated", ...
-    "extensible_kirchhoff_pcs_flying_plane_contact_n1"));
+    "extensible_euler_bernoulli_pcs_flying_plane_contact_n1"));
 verifyEqual(testCase,plant.nbase,6);
 verifyEqual(testCase,plant.narm,3);
 verifyEqual(testCase,plant.constraint.family,"plane_point_contact");

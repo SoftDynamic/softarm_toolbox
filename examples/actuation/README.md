@@ -3,15 +3,15 @@
 本目录演示 MATLAB 中的 `softarm_actuator_*` 生成接口。执行器模块将绳索输入
 映射为 Plant 的软臂广义力 `tau`。
 
-- `run_three_tendon_force.m`：三根相隔 120° 的非负拉力驱动两段 Extensible Kirchhoff PCS rod。
+- `run_three_tendon_force.m`：三根相隔 120° 的非负拉力驱动两段 Extensible Euler–Bernoulli PCS rod。
 - `run_three_tendon_acceleration.m`：严格约束三根贯穿绳索的长度加速度，并输出求解拉力与可行性。
 - `run_signed_force.m`：两个理想成对通道接受正负等效拉力，其 Jacobian 的轴向列为零。
 
 重新生成参考包：
 
 ```powershell
-softarm build examples/config/extensible_kirchhoff_pcs_three_tendon_n2.toml --out examples/generated/extensible_kirchhoff_pcs_three_tendon_n2
-softarm build examples/config/extensible_kirchhoff_pcs_signed_pair_n2.toml --out examples/generated/extensible_kirchhoff_pcs_signed_pair_n2
+softarm build examples/config/extensible_euler_bernoulli_pcs_three_tendon_n2.toml --out examples/generated/extensible_euler_bernoulli_pcs_three_tendon_n2
+softarm build examples/config/extensible_euler_bernoulli_pcs_signed_pair_n2.toml --out examples/generated/extensible_euler_bernoulli_pcs_signed_pair_n2
 softarm build examples/config/euler_bernoulli_ritz_two_signed_pairs_n2.toml --out examples/generated/euler_bernoulli_ritz_two_signed_pairs_n2
 ```
 
@@ -23,7 +23,7 @@ softarm build examples/config/euler_bernoulli_ritz_two_signed_pairs_n2.toml --ou
 打开 `examples/simulink/softarm_tendon_force_demo.slx` 或
 `examples/simulink/softarm_tendon_acceleration_demo.slx`。模型启动回调将加载
 `matlab` 与 `matlab/simulink` 路径和默认的
-`extensible_kirchhoff_pcs_three_tendon_n2` 生成包。
+`extensible_euler_bernoulli_pcs_three_tendon_n2` 生成包。
 
 拉力 Demo 中双击 `Tension command` 修改三维拉力向量；加速度 Demo 中双击
 `Tendon acceleration` 修改三维绳长加速度。点击工具栏 Run，通过

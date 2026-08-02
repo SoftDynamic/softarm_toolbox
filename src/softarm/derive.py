@@ -357,7 +357,7 @@ def _derive_common(
     )
 
 
-def _kirchhoff_pcs_strains(
+def _euler_bernoulli_pcs_strains(
     bx: sp.Expr,
     by: sp.Expr,
     current_length: sp.Expr,
@@ -369,7 +369,7 @@ def _kirchhoff_pcs_strains(
     )
 
 
-def _derive_extensible_kirchhoff_pcs(config: ModelConfig) -> SymbolicPlant:
+def _derive_extensible_euler_bernoulli_pcs(config: ModelConfig) -> SymbolicPlant:
     q, dq = _arm_coordinates(config, ("bx", "by", "l"))
     pb = _ParameterBuilder(config)
     lengths = pb.sections("rest_length", 0.5)
@@ -387,7 +387,7 @@ def _derive_extensible_kirchhoff_pcs(config: ModelConfig) -> SymbolicPlant:
 
     def local(section: int, xi: sp.Expr) -> sp.Matrix:
         offset = 3 * section
-        kappa, nu = _kirchhoff_pcs_strains(
+        kappa, nu = _euler_bernoulli_pcs_strains(
             q[offset], q[offset + 1], q[offset + 2], lengths[section]
         )
         return pcs_transform(kappa, nu, lengths[section], xi)
@@ -477,7 +477,7 @@ def _derive_euler_bernoulli_pcs(config: ModelConfig) -> SymbolicPlant:
 
     def local(section: int, xi: sp.Expr) -> sp.Matrix:
         offset = 2 * section
-        kappa, nu = _kirchhoff_pcs_strains(
+        kappa, nu = _euler_bernoulli_pcs_strains(
             q[offset], q[offset + 1], lengths[section], lengths[section]
         )
         return pcs_transform(kappa, nu, lengths[section], xi)
@@ -497,7 +497,7 @@ def _derive_euler_bernoulli_pcs(config: ModelConfig) -> SymbolicPlant:
     )
 
 
-def _derive_extensible_kirchhoff_ritz(config: ModelConfig) -> SymbolicPlant:
+def _derive_extensible_euler_bernoulli_ritz(config: ModelConfig) -> SymbolicPlant:
     q, dq = _arm_coordinates(config, ("ax", "ay", "az"))
     pb = _ParameterBuilder(config)
     lengths = pb.sections("rest_length", 0.5)
@@ -533,15 +533,15 @@ def _derive_extensible_kirchhoff_ritz(config: ModelConfig) -> SymbolicPlant:
     axial_strain = sp.diff(psi_z, xi)
     integral_x = integrate_unit(
         curvature_x**2, xi, config.integration,
-        "extensible Kirchhoff x Ritz stiffness",
+        "extensible Euler-Bernoulli x Ritz stiffness",
     )
     integral_y = integrate_unit(
         curvature_y**2, xi, config.integration,
-        "extensible Kirchhoff y Ritz stiffness",
+        "extensible Euler-Bernoulli y Ritz stiffness",
     )
     integral_z = integrate_unit(
         axial_strain**2, xi, config.integration,
-        "extensible Kirchhoff z Ritz stiffness",
+        "extensible Euler-Bernoulli z Ritz stiffness",
     )
     elastic = sp.S.Zero
     damping: list[sp.Expr] = []
@@ -615,7 +615,7 @@ def _derive_euler_bernoulli_pac(config: ModelConfig) -> SymbolicPlant:
     )
 
 
-def _derive_extensible_kirchhoff_pac(config: ModelConfig) -> SymbolicPlant:
+def _derive_extensible_euler_bernoulli_pac(config: ModelConfig) -> SymbolicPlant:
     q, dq = _pac_arm_coordinates(config, extensible=True)
     pb = _ParameterBuilder(config)
     lengths = pb.sections("rest_length", 0.5)
@@ -764,10 +764,10 @@ def _validate_euler_bernoulli_ritz(config: ModelConfig) -> None:
         raise ConfigError("euler_bernoulli + ritz does not accept ritz.z")
 
 
-def _validate_extensible_kirchhoff_ritz(config: ModelConfig) -> None:
+def _validate_extensible_euler_bernoulli_ritz(config: ModelConfig) -> None:
     _validate_ritz_common(config)
     if config.ritz_z is None:
-        raise ConfigError("extensible_kirchhoff + ritz requires ritz.z")
+        raise ConfigError("extensible_euler_bernoulli + ritz requires ritz.z")
     if abs(config.ritz_z[0]) > 1e-12:
         raise ConfigError("ritz.z must satisfy psi(0)=0")
     if abs(sum(config.ritz_z) - 1.0) > 1e-10:
@@ -813,17 +813,18 @@ _MODELS: dict[tuple[str, str], RegisteredModel] = {
     ("euler_bernoulli", "pcs"): RegisteredModel(
         _derive_euler_bernoulli_pcs, _validate_pcs_inertia
     ),
-    ("extensible_kirchhoff", "ritz"): RegisteredModel(
-        _derive_extensible_kirchhoff_ritz, _validate_extensible_kirchhoff_ritz
+    ("extensible_euler_bernoulli", "ritz"): RegisteredModel(
+        _derive_extensible_euler_bernoulli_ritz,
+        _validate_extensible_euler_bernoulli_ritz,
     ),
-    ("extensible_kirchhoff", "pcs"): RegisteredModel(
-        _derive_extensible_kirchhoff_pcs, _validate_pcs_inertia
+    ("extensible_euler_bernoulli", "pcs"): RegisteredModel(
+        _derive_extensible_euler_bernoulli_pcs, _validate_pcs_inertia
     ),
     ("euler_bernoulli", "pac"): RegisteredModel(
         _derive_euler_bernoulli_pac, _validate_pac
     ),
-    ("extensible_kirchhoff", "pac"): RegisteredModel(
-        _derive_extensible_kirchhoff_pac, _validate_pac
+    ("extensible_euler_bernoulli", "pac"): RegisteredModel(
+        _derive_extensible_euler_bernoulli_pac, _validate_pac
     ),
     ("cosserat", "pcs"): RegisteredModel(
         _derive_cosserat_pcs, _validate_cosserat_pcs

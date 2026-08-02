@@ -17,7 +17,7 @@ def test_reference_configs_are_valid():
 def test_base_and_constraint_validation(tmp_path):
     path = tmp_path / "floating.toml"
     path.write_text(
-        '[model]\nrod="extensible_kirchhoff"\nparameterization="pcs"\nsegments=1\n'
+        '[model]\nrod="extensible_euler_bernoulli"\nparameterization="pcs"\nsegments=1\n'
         '[base]\nmode="floating_rpy"\nmount_xyz=[0,0,0]\nmount_rpy=[0,0,0]\n'
         '[constraint]\nfamily="plane_point_contact"\nplane_normal=[0,0,0]\n',
         encoding="utf-8",
@@ -41,7 +41,7 @@ def test_euler_bernoulli_requires_explicit_normalized_ritz(tmp_path):
 def test_tendon_actuation_requires_explicit_valid_structure(tmp_path, actuation, match):
     path = tmp_path / "bad_actuation.toml"
     path.write_text(
-        '[model]\nrod="extensible_kirchhoff"\nparameterization="pcs"\nsegments=1\n[actuation]\n' + actuation,
+        '[model]\nrod="extensible_euler_bernoulli"\nparameterization="pcs"\nsegments=1\n[actuation]\n' + actuation,
         encoding="utf-8",
     )
     with pytest.raises(ConfigError, match=match):
@@ -51,7 +51,7 @@ def test_tendon_actuation_requires_explicit_valid_structure(tmp_path, actuation,
 def test_tendon_config_rejects_duplicate_span(tmp_path):
     path = tmp_path / "duplicate.toml"
     path.write_text(
-        '[model]\nrod="extensible_kirchhoff"\nparameterization="pcs"\nsegments=1\n'
+        '[model]\nrod="extensible_euler_bernoulli"\nparameterization="pcs"\nsegments=1\n'
         '[actuation]\nfamily="tendon"\nacceleration="none"\n'
         '[[actuation.channels]]\nname="t1"\nkind="unilateral"\n'
         '[[actuation.channels.spans]]\nsection=1\nradius=0.02\nangle=0\n'

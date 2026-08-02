@@ -1,7 +1,7 @@
 {
   "model": {
-    "rod": "extensible_kirchhoff",
-    "parameterization": "ritz",
+    "rod": "extensible_euler_bernoulli",
+    "parameterization": "pcs",
     "segments": 2,
     "base_mode": "fixed",
     "mount_xyz": [
@@ -19,12 +19,12 @@
   "coordinates": {
     "base": [],
     "arm": [
-      "ax1",
-      "ay1",
-      "az1",
-      "ax2",
-      "ay2",
-      "az2"
+      "bx1",
+      "by1",
+      "l1",
+      "bx2",
+      "by2",
+      "l2"
     ]
   },
   "parameters": [
@@ -69,51 +69,51 @@
       "default": 0.00011
     },
     {
-      "name": "s1_EI_x",
+      "name": "s1_k_bx",
       "default": 1.1
     },
     {
-      "name": "s2_EI_x",
+      "name": "s2_k_bx",
       "default": 1.2
     },
     {
-      "name": "s1_EI_y",
+      "name": "s1_k_by",
       "default": 1.1
     },
     {
-      "name": "s2_EI_y",
+      "name": "s2_k_by",
       "default": 1.2
     },
     {
-      "name": "s1_EA",
+      "name": "s1_k_l",
       "default": 45.0
     },
     {
-      "name": "s2_EA",
+      "name": "s2_k_l",
       "default": 50.0
     },
     {
-      "name": "s1_d_ax",
+      "name": "s1_d_bx",
       "default": 0.05
     },
     {
-      "name": "s2_d_ax",
+      "name": "s2_d_bx",
       "default": 0.05
     },
     {
-      "name": "s1_d_ay",
+      "name": "s1_d_by",
       "default": 0.05
     },
     {
-      "name": "s2_d_ay",
+      "name": "s2_d_by",
       "default": 0.05
     },
     {
-      "name": "s1_d_az",
+      "name": "s1_d_l",
       "default": 0.1
     },
     {
-      "name": "s2_d_az",
+      "name": "s2_d_l",
       "default": 0.1
     },
     {

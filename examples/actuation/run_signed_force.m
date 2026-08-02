@@ -1,7 +1,7 @@
 root = fileparts(fileparts(fileparts(mfilename("fullpath"))));
 addpath(fullfile(root,"matlab"));
 plant = softarm.loadModel(fullfile(root,"examples","generated", ...
-    "extensible_kirchhoff_pcs_signed_pair_n2"));
+    "extensible_euler_bernoulli_pcs_signed_pair_n2"));
 
 q = [0;0;0.45;0;0;0.50];
 tension = softarm.packActuatorInputs(plant.actuation, ...

@@ -20,7 +20,7 @@ $\tau_a$ 为软臂广义力，$w_B$ 为机体系基座扳手，$w_e$ 为 NED 世
 | 梁模型 | Ritz | PCS | [PAC](https://arxiv.org/abs/2211.10188) | 保留的应变分量 |
 | --- | --- | --- | --- | --- |
 | Euler–Bernoulli | ✅ | ✅ | ✅ | $\boldsymbol e=[\kappa_x,\kappa_y,0,0,0,0]^T$ |
-| Extensible Kirchhoff | ✅ | ✅ | ✅ | $\boldsymbol e=[\kappa_x,\kappa_y,0,0,0,\varepsilon_z]^T$ |
+| Extensible Euler–Bernoulli | ✅ | ✅ | ✅ | $\boldsymbol e=[\kappa_x,\kappa_y,0,0,0,\varepsilon_z]^T$ |
 | Cosserat | ❌ | ✅ | ❌ | $\boldsymbol e=[\kappa_x,\kappa_y,\kappa_z,\gamma_x,\gamma_y,\varepsilon_z]^T$ |
 
 表中
@@ -32,8 +32,8 @@ $$
 
 表示相对于参考构型的杆应变：$\kappa$ 为角应变，$\gamma_x,\gamma_y$ 为横向剪切应变，
 $\varepsilon_z$ 为轴向应变。该列表示各梁理论保留的应变分量，不表示所有空间参数化都精确
-实现非线性几何约束。PCS 和 PAC 精确实现 Euler–Bernoulli 的不可伸长约束以及两种
-Kirchhoff 梁的无剪切约束，并在可伸长模型中显式表示轴向伸长；Ritz 使用一阶小挠度
+实现非线性几何约束。PCS 和 PAC 精确实现 Euler–Bernoulli 的无剪切约束；不可伸长模型
+固定轴向应变，可伸长模型则显式表示轴向伸长。Ritz 使用一阶小挠度
 运动学。PAC 的段级截面转角 $\phi_i$ 不是连续扭转应变 $\kappa_z$。
 
 三类模型均支持固定基座和 ZYX 欧拉角浮动基座。浮动基座坐标排列为
@@ -47,7 +47,7 @@ Kirchhoff 梁的无剪切约束，并在可伸长模型中显式表示轴向伸�
 
 ### 1.2 功能范围
 
-- Euler–Bernoulli、Extensible Kirchhoff 与 Cosserat rod 建模
+- Euler–Bernoulli、Extensible Euler–Bernoulli 与 Cosserat rod 建模
 - Ritz、分段恒应变（PCS）与三维分段仿射曲率（PAC）空间参数化
 - 固定基座与浮动基座联合动力学
 - 解析积分与 Gauss–Legendre 积分
@@ -90,21 +90,21 @@ Python、Wolfram Kernel 和 `pdflatex` 路径。Wolfram Kernel 也可在构建�
 ### 2.2 验证、生成与检查
 
 ```shell
-softarm validate examples/config/extensible_kirchhoff_pcs_lumped_n2.toml
-softarm build examples/config/extensible_kirchhoff_pcs_lumped_n2.toml \
+softarm validate examples/config/extensible_euler_bernoulli_pcs_lumped_n2.toml
+softarm build examples/config/extensible_euler_bernoulli_pcs_lumped_n2.toml \
   --backend sympy \
   --target matlab \
-  --out build/extensible-kirchhoff-pcs
-softarm inspect build/extensible-kirchhoff-pcs
+  --out build/extensible-euler-bernoulli-pcs
+softarm inspect build/extensible-euler-bernoulli-pcs
 ```
 
 使用 Wolfram 加速 bias 批量求导：
 
 ```shell
-softarm build examples/config/extensible_kirchhoff_pcs_distributed_n2.toml \
+softarm build examples/config/extensible_euler_bernoulli_pcs_distributed_n2.toml \
   --backend wolfram \
   --target matlab \
-  --out build/extensible-kirchhoff-pcs-wolfram
+  --out build/extensible-euler-bernoulli-pcs-wolfram
 ```
 
 构建开始时会打印实际执行计划，例如：
@@ -132,10 +132,10 @@ Symbolic plan: derive=SymPy, bias=Wolfram, FactorTerms=off, CSE=SymPy
 例如只试用 `FactorTerms`：
 
 ```shell
-softarm build examples/config/extensible_kirchhoff_pcs_lumped_n2.toml \
+softarm build examples/config/extensible_euler_bernoulli_pcs_lumped_n2.toml \
   --backend wolfram \
   --wolfram-factor-terms \
-  --out build/extensible-kirchhoff-pcs-factor-terms
+  --out build/extensible-euler-bernoulli-pcs-factor-terms
 ```
 
 例如只试用实验性 Wolfram CSE：
@@ -152,8 +152,8 @@ softarm build examples/config/euler_bernoulli_ritz_n2.toml \
 | 配置 | SymPy 模型推导 | Kernel 启动 | Wolfram bias | MATLAB 生成/CSE | 完整构建 |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Euler N2 | 0.347 s | 7.302 s | 0.125 s | 0.067 s | 7.848 s |
-| Extensible Kirchhoff PCS lumped N2 | 0.869 s | 7.138 s | 21.977 s | 2.810 s | 32.970 s |
-| Extensible Kirchhoff PCS distributed N2 | 1.556 s | 7.407 s | 58.440 s | 5.804 s | 73.256 s |
+| Extensible Euler–Bernoulli PCS lumped N2 | 0.869 s | 7.138 s | 21.977 s | 2.810 s | 32.970 s |
+| Extensible Euler–Bernoulli PCS distributed N2 | 1.556 s | 7.407 s | 58.440 s | 5.804 s | 73.256 s |
 
 不同机器上的 Kernel 启动、许可证检查和 CSE 时间会变化，应在自己的构建环境
 分别测量。尤其不要因为某个配置较快，就同时打开两个实验开关。
@@ -183,11 +183,11 @@ softarm build examples/config/euler_bernoulli_ritz_n2.toml \
 
 ### 3.1 模型与积分
 
-Extensible Kirchhoff PCS 示例：
+Extensible Euler–Bernoulli PCS 示例：
 
 ```toml
 [model]
-rod = "extensible_kirchhoff"
+rod = "extensible_euler_bernoulli"
 parameterization = "pcs"
 segments = 2
 inertia = "lumped"
@@ -382,7 +382,7 @@ TeX 文档依赖 `article`、`amsmath`、`amssymb`、`geometry` 和 `longtable`�
 
 ```matlab
 addpath("matlab")
-plant = softarm.loadModel("examples/generated/extensible_kirchhoff_pcs_lumped_n2");
+plant = softarm.loadModel("examples/generated/extensible_euler_bernoulli_pcs_lumped_n2");
 
 p = softarm.packParameters(plant.manifest, struct("s1_mass",0.25));
 q = [0;0;0.45;0;0;0.50];
@@ -412,7 +412,7 @@ ddq = plant.forwardDynamics( ...
 
 ```matlab
 plant = softarm.loadModel( ...
-    "examples/generated/extensible_kirchhoff_pcs_three_tendon_n2");
+    "examples/generated/extensible_euler_bernoulli_pcs_three_tendon_n2");
 T = softarm.packActuatorInputs( ...
     plant.actuation,struct("t1",2,"t2",1.5,"t3",1));
 [tau,isFeasible] = plant.actuation.force(q,T,plant.parameters);
@@ -542,7 +542,7 @@ q_i=[b_{x,i},b_{y,i}]^T,\quad
 \nu_i=[0,0,1]^T,
 $$
 
-因此广义坐标中没有长度项。Extensible Kirchhoff PCS 使用
+因此广义坐标中没有长度项。Extensible Euler–Bernoulli PCS 使用
 
 $$
 q_i=[b_{x,i},b_{y,i},l_i]^T,\quad
@@ -553,7 +553,7 @@ $$
 ### 7.3 PAC 运动学
 
 PAC 每段采用三维仿射曲率坐标。Euler–Bernoulli 段为
-$q_i=[c_{0,i},c_{1,i},\phi_i]^T$，Extensible Kirchhoff 段再加入绝对长度
+$q_i=[c_{0,i},c_{1,i},\phi_i]^T$，Extensible Euler–Bernoulli 段再加入绝对长度
 $l_i$。令
 
 $$
@@ -579,7 +579,7 @@ r_i(\xi)=\ell_i
 \end{bmatrix},
 $$
 
-其中 Euler–Bernoulli 取 $\ell_i=L_i$，Extensible Kirchhoff 取
+其中 Euler–Bernoulli 取 $\ell_i=L_i$，Extensible Euler–Bernoulli 取
 $\ell_i=l_i$。因此前者严格满足
 $\|\partial r_i/\partial\xi\|=L_i$，后者的中心线弧长为 $l_i$。
 积分特殊函数在 $c_1=0$ 和完全直杆处使用解析延拓。
@@ -592,7 +592,7 @@ $$
 &\kappa_i(\xi)=
 \begin{bmatrix}0&(c_{0,i}+c_{1,i}\xi)/L_i&0\end{bmatrix}^T,
 &&\nu_i=\boldsymbol e_3,\\
-\text{Extensible Kirchhoff:}\quad
+\text{Extensible Euler--Bernoulli:}\quad
 &\kappa_i(\xi)=
 \begin{bmatrix}0&(c_{0,i}+c_{1,i}\xi)/L_{0,i}&0\end{bmatrix}^T,
 &&\nu_i=(l_i/L_{0,i})\boldsymbol e_3,
@@ -612,14 +612,14 @@ V_{e,i}=\frac12\frac{EI_{y,i}\cos^2\phi_i+EI_{x,i}\sin^2\phi_i}{L_i}
 c_i^THc_i+\frac12\frac{GJ_i}{L_i}\phi_i^2.
 $$
 
-Extensible Kirchhoff PAC 弹性能为
+Extensible Euler–Bernoulli PAC 弹性能为
 
 $$
 V_{e,i}=\frac12(k_{bx,i}\cos^2\phi_i+k_{by,i}\sin^2\phi_i)c_i^THc_i
 +\frac12k_{\phi,i}\phi_i^2+\frac12k_{l,i}(l_i-L_{0,i})^2.
 $$
 
-### 7.4 Euler–Bernoulli 与 Extensible Kirchhoff Ritz 运动学
+### 7.4 Euler–Bernoulli 与 Extensible Euler–Bernoulli Ritz 运动学
 
 每段在两个弯曲平面分别使用一个 Ritz 模态：
 
@@ -675,7 +675,7 @@ $$
 $$
 
 因此不精确保持弧长；相对 $L$ 的几何伸长为斜率的二阶量，被一阶模型忽略。
-Extensible Kirchhoff Ritz 再加入 $w_z(\xi)=a_z\psi_z(\xi)$，并保留线性轴向应变
+Extensible Euler–Bernoulli Ritz 再加入 $w_z(\xi)=a_z\psi_z(\xi)$，并保留线性轴向应变
 $\varepsilon_z=(a_z/L)\psi_z'(\xi)$；横向斜率引起的二阶轴向应变同样不计。
 
 Euler 段的弯曲势能为
@@ -759,11 +759,11 @@ $$
 V_g=-\sum_i m_i g\int_0^1z_i(q,\xi)d\xi-m_egz_e(q).
 $$
 
-PCS `lumped` 模式的对应项为 $-m_i g z_i(q,1/2)$。Extensible Kirchhoff PCS
+PCS `lumped` 模式的对应项为 $-m_i g z_i(q,1/2)$。Extensible Euler–Bernoulli PCS
 的有效弹性势能为
 
 $$
-V_{e,i}^{\mathrm{EK,PCS}}=
+V_{e,i}^{\mathrm{EEB,PCS}}=
 \frac12k_{bx,i}b_{x,i}^2+
 \frac12k_{by,i}b_{y,i}^2+
 \frac12k_{l,i}(l_i-L_{0,i})^2.
@@ -841,7 +841,7 @@ $$
 
 ### 7.8 绳索驱动
 
-第 $a$ 个 Extensible Kirchhoff PCS 单绳通道的长度坐标为
+第 $a$ 个 Extensible Euler–Bernoulli PCS 单绳通道的长度坐标为
 
 $$
 y_a=\sum_{i\in\mathcal P_a}\left[
@@ -862,7 +862,7 @@ $$
 y_{ai}=\ell_i-r_{ai}\bar c_i\cos(\theta_{ai}-\phi_i),
 $$
 
-其中 Euler 取 $\ell_i=L_i$，Extensible Kirchhoff 取 $\ell_i=l_i$；
+其中 Euler 取 $\ell_i=L_i$，Extensible Euler–Bernoulli 取 $\ell_i=l_i$；
 `signed` 通道去掉 $\ell_i$。严格加速度模式仍要求无应力参考构型下
 $J_a$ 满行秩，降秩配置直接拒绝且不做正则化。
 
@@ -933,17 +933,17 @@ $$
 
 | 示例 | 配置与生成包 |
 | --- | --- |
-| 两段 Extensible Kirchhoff PCS，中点集中惯性 | `extensible_kirchhoff_pcs_lumped_n2` |
-| 两段 Extensible Kirchhoff PCS，分布惯性 | `extensible_kirchhoff_pcs_distributed_n2` |
+| 两段 Extensible Euler–Bernoulli PCS，中点集中惯性 | `extensible_euler_bernoulli_pcs_lumped_n2` |
+| 两段 Extensible Euler–Bernoulli PCS，分布惯性 | `extensible_euler_bernoulli_pcs_distributed_n2` |
 | 两段 Euler–Bernoulli PAC，分布惯性 | `euler_bernoulli_pac_distributed_n2` |
-| 两段 Extensible Kirchhoff PAC，分布惯性 | `extensible_kirchhoff_pac_distributed_n2` |
+| 两段 Extensible Euler–Bernoulli PAC，分布惯性 | `extensible_euler_bernoulli_pac_distributed_n2` |
 | 两段 Euler–Bernoulli Ritz | `euler_bernoulli_ritz_n2` |
 | 两段 Euler–Bernoulli PCS | `euler_bernoulli_pcs_n2` |
-| 两段 Extensible Kirchhoff Ritz | `extensible_kirchhoff_ritz_n2` |
-| 两段 Extensible Kirchhoff PCS，三绳驱动 | `extensible_kirchhoff_pcs_three_tendon_n2` |
-| 两段 Extensible Kirchhoff PCS，signed 绳索对 | `extensible_kirchhoff_pcs_signed_pair_n2` |
+| 两段 Extensible Euler–Bernoulli Ritz | `extensible_euler_bernoulli_ritz_n2` |
+| 两段 Extensible Euler–Bernoulli PCS，三绳驱动 | `extensible_euler_bernoulli_pcs_three_tendon_n2` |
+| 两段 Extensible Euler–Bernoulli PCS，signed 绳索对 | `extensible_euler_bernoulli_pcs_signed_pair_n2` |
 | 两段 Euler–Bernoulli Ritz，两个 signed 绳索对 | `euler_bernoulli_ritz_two_signed_pairs_n2` |
-| 浮动基座 Extensible Kirchhoff PCS，平面单点接触 | `extensible_kirchhoff_pcs_flying_plane_contact_n1` |
+| 浮动基座 Extensible Euler–Bernoulli PCS，平面单点接触 | `extensible_euler_bernoulli_pcs_flying_plane_contact_n1` |
 | 单段 Cosserat PCS，分布惯性与三绳驱动 | `cosserat_pcs_distributed_tendon_n1` |
 | 单段 Cosserat PCS，中点集中惯性 | `cosserat_pcs_lumped_n1` |
 

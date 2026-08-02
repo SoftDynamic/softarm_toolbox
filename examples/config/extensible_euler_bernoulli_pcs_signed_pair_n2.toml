@@ -1,5 +1,5 @@
 [model]
-rod = "extensible_kirchhoff"
+rod = "extensible_euler_bernoulli"
 parameterization = "pcs"
 segments = 2
 inertia = "lumped"
@@ -30,8 +30,8 @@ family = "tendon"
 acceleration = "strict"
 
 [[actuation.channels]]
-name = "t1"
-kind = "unilateral"
+name = "bend_x"
+kind = "signed"
 [[actuation.channels.spans]]
 section = 1
 radius = 0.0275
@@ -42,25 +42,13 @@ radius = 0.0300
 angle = 0.0
 
 [[actuation.channels]]
-name = "t2"
-kind = "unilateral"
+name = "bend_y"
+kind = "signed"
 [[actuation.channels.spans]]
 section = 1
 radius = 0.0275
-angle = 2.0943951023931953
+angle = 1.5707963267948966
 [[actuation.channels.spans]]
 section = 2
 radius = 0.0300
-angle = 2.0943951023931953
-
-[[actuation.channels]]
-name = "t3"
-kind = "unilateral"
-[[actuation.channels.spans]]
-section = 1
-radius = 0.0275
-angle = 4.1887902047863905
-[[actuation.channels.spans]]
-section = 2
-radius = 0.0300
-angle = 4.1887902047863905
+angle = 1.5707963267948966

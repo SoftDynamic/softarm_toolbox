@@ -1,6 +1,6 @@
 {
   "model": {
-    "rod": "extensible_kirchhoff",
+    "rod": "extensible_euler_bernoulli",
     "parameterization": "pcs",
     "segments": 2,
     "base_mode": "fixed",
@@ -135,8 +135,37 @@
     {
       "name": "tip_Izz",
       "default": 0.01
+    },
+    {
+      "name": "act_bend_x_s1_radius",
+      "default": 0.0275
+    },
+    {
+      "name": "act_bend_x_s2_radius",
+      "default": 0.03
+    },
+    {
+      "name": "act_bend_y_s1_radius",
+      "default": 0.0275
+    },
+    {
+      "name": "act_bend_y_s2_radius",
+      "default": 0.03
     }
   ],
-  "actuation": null,
+  "actuation": {
+    "family": "tendon",
+    "acceleration": "strict",
+    "channels": [
+      {
+        "name": "bend_x",
+        "kind": "signed"
+      },
+      {
+        "name": "bend_y",
+        "kind": "signed"
+      }
+    ]
+  },
   "constraint": null
 }

@@ -46,10 +46,10 @@ def _numeric(matrix, plant, q):
 @pytest.mark.parametrize("config_name", [
     "euler_bernoulli_ritz_n2.toml",
     "euler_bernoulli_pcs_n2.toml",
-    "extensible_kirchhoff_ritz_n2.toml",
-    "extensible_kirchhoff_pcs_lumped_n2.toml",
+    "extensible_euler_bernoulli_ritz_n2.toml",
+    "extensible_euler_bernoulli_pcs_lumped_n2.toml",
     "euler_bernoulli_pac_distributed_n2.toml",
-    "extensible_kirchhoff_pac_distributed_n2.toml",
+    "extensible_euler_bernoulli_pac_distributed_n2.toml",
     "cosserat_pcs_lumped_n1.toml",
 ])
 def test_material_kinematics_matches_section_ends(config_name):
@@ -74,7 +74,7 @@ def test_material_kinematics_respects_floating_base_and_mount():
     mount_xyz = (0.12, -0.23, 0.34)
     mount_rpy = (0.17, -0.11, 0.08)
     plant = derive(ModelConfig(
-        rod="extensible_kirchhoff", parameterization="pcs", segments=1,
+        rod="extensible_euler_bernoulli", parameterization="pcs", segments=1,
         inertia="lumped", integration=IntegrationConfig(),
         base=BaseConfig("floating_rpy", mount_xyz, mount_rpy),
     ))
@@ -105,8 +105,10 @@ def test_material_kinematics_respects_floating_base_and_mount():
     np.testing.assert_allclose(actual, expected, rtol=1e-11, atol=1e-12)
 
 
-def test_lumped_extensible_kirchhoff_pcs_mass_is_symmetric_and_finite():
-    plant = derive(load_config(ROOT / "examples/config/extensible_kirchhoff_pcs_lumped_n2.toml"))
+def test_lumped_extensible_euler_bernoulli_pcs_mass_is_symmetric_and_finite():
+    plant = derive(
+        load_config(ROOT / "examples/config/extensible_euler_bernoulli_pcs_lumped_n2.toml")
+    )
     q = [0.08, -0.04, 0.46, -0.03, 0.06, 0.51]
     mass = _numeric(plant.mass, plant, q)
     np.testing.assert_allclose(mass, mass.T, rtol=1e-11, atol=1e-12)
@@ -133,8 +135,10 @@ def test_euler_bernoulli_pcs_has_only_fixed_length_bending_coordinates():
     assert np.isclose(float(straight[2, 3]), 0.95)
 
 
-def test_extensible_kirchhoff_ritz_has_three_displacement_coordinates():
-    plant = derive(load_config(ROOT / "examples/config/extensible_kirchhoff_ritz_n2.toml"))
+def test_extensible_euler_bernoulli_ritz_has_three_displacement_coordinates():
+    plant = derive(
+        load_config(ROOT / "examples/config/extensible_euler_bernoulli_ritz_n2.toml")
+    )
     assert plant.arm_coordinate_names == ["ax1", "ay1", "az1", "ax2", "ay2", "az2"]
     assert plant.mass.shape == (6, 6)
     axial_stiffness = sp.diff(plant.potential, plant.arm_q[2], 2)
@@ -160,7 +164,7 @@ def test_pac_coordinates_reference_lengths_and_anisotropic_hankel_energy():
     )
 
     extensible = derive(ModelConfig(
-        rod="extensible_kirchhoff", parameterization="pac", segments=1,
+        rod="extensible_euler_bernoulli", parameterization="pac", segments=1,
         inertia="lumped", integration=IntegrationConfig(),
     ))
     assert extensible.arm_coordinate_names == ["c0_1", "c1_1", "phi1", "l1"]
@@ -174,11 +178,11 @@ def test_pac_coordinates_reference_lengths_and_anisotropic_hankel_energy():
 
 def test_floating_base_has_coupled_coordinates_and_wrench_map():
     fixed = derive(ModelConfig(
-        rod="extensible_kirchhoff", parameterization="pcs", segments=1,
+        rod="extensible_euler_bernoulli", parameterization="pcs", segments=1,
         inertia="lumped", integration=IntegrationConfig()
     ))
     floating = derive(ModelConfig(
-        rod="extensible_kirchhoff", parameterization="pcs", segments=1,
+        rod="extensible_euler_bernoulli", parameterization="pcs", segments=1,
         inertia="lumped", integration=IntegrationConfig(),
         base=BaseConfig("floating_rpy"),
     ))
