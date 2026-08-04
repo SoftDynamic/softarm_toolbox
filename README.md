@@ -115,6 +115,29 @@ uv run --locked --extra wolfram softarm build \
 Symbolic plan: derive=SymPy, bias=Wolfram, FactorTerms=off, CSE=SymPy
 ```
 
+增加 `--verbose` 可测量当前符号策略的高层构建阶段：
+
+```shell
+uv run --locked --extra wolfram softarm build \
+  examples/config/extensible_euler_bernoulli_pcs_distributed_n2.toml \
+  --backend wolfram \
+  --target matlab \
+  --out build/extensible-euler-bernoulli-pcs-wolfram \
+  --verbose
+```
+
+```text
+Timing: model derivation [SymPy]: 1.556 s
+Timing: Wolfram Kernel startup: 7.407 s
+Timing: bias differentiation [Wolfram]: 58.440 s
+Timing: MATLAB generation/CSE: 5.804 s
+Timing: total build: 73.256 s
+```
+
+计时从 `build_bundle` 开始，不包括配置文件读取。`MATLAB generation/CSE` 汇总
+所选 `FactorTerms`、CSE、MATLAB/TeX/manifest 生成，不再逐函数拆分。若某阶段
+失败，该阶段及 `total build` 的计时行会附加 `(failed)`。
+
 ### 2.3 Wolfram 优化开关
 
 默认情况下，代码生成使用稳定的 `sympy.cse`，且不运行 `FactorTerms`。以下

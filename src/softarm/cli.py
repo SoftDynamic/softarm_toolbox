@@ -22,6 +22,11 @@ def _parser() -> argparse.ArgumentParser:
     build.add_argument("--backend", choices=("sympy", "wolfram"), default="sympy")
     build.add_argument("--target", choices=("matlab",), default="matlab")
     build.add_argument("--out", required=True)
+    build.add_argument(
+        "--verbose",
+        action="store_true",
+        help="print elapsed time for each build stage",
+    )
     build.add_argument("--wolfram-kernel")
     build.add_argument(
         "--wolfram-timeout",
@@ -114,6 +119,7 @@ def main(argv: list[str] | None = None) -> int:
             wolfram_cse=args.wolfram_cse,
             wolfram_factor_terms=args.wolfram_factor_terms,
             tex_appendix=args.tex_appendix,
+            verbose=args.verbose,
         )
         config = load_config(args.config)
         print(symbolic_plan(options))

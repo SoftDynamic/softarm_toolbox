@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
@@ -22,6 +25,7 @@ class BuildOptions:
     wolfram_cse: bool = False
     wolfram_factor_terms: bool = False
     tex_appendix: bool = False
+    verbose: bool = False
 
     def __post_init__(self) -> None:
         if self.backend not in {"sympy", "wolfram"}:
@@ -72,6 +76,22 @@ class BuildError(RuntimeError):
         super().__init__(detail)
 
 
+@contextmanager
+def _timed_stage(options: BuildOptions, stage: str) -> Iterator[None]:
+    if not options.verbose:
+        yield
+        return
+    start = time.perf_counter()
+    try:
+        yield
+    except BaseException:
+        elapsed = time.perf_counter() - start
+        print(f"Timing: {stage}: {elapsed:.3f} s (failed)")
+        raise
+    elapsed = time.perf_counter() - start
+    print(f"Timing: {stage}: {elapsed:.3f} s")
+
+
 def derive_system(config: ModelConfig) -> DerivedSystem:
     plant = derive(config)
     return DerivedSystem(
@@ -98,10 +118,11 @@ def _materialize_and_generate(
     kernel: WolframKernel | None,
 ) -> Path:
     differentiator = kernel or SympyBatchDifferentiator()
+    strategy = "Wolfram" if kernel is not None else "SymPy"
     try:
-        bias = assemble_bias(system.plant, differentiator)
+        with _timed_stage(options, f"bias differentiation [{strategy}]"):
+            bias = assemble_bias(system.plant, differentiator)
     except Exception as error:
-        strategy = "Wolfram" if kernel is not None else "SymPy"
         raise BuildError("bias differentiation", strategy, error) from error
 
     plant = replace(system.plant, _bias=bias)
@@ -112,14 +133,15 @@ def _materialize_and_generate(
         eliminator=eliminator,
     )
     try:
-        return generate_matlab_bundle(
-            plant,
-            output,
-            actuation=system.actuation,
-            constraint=system.constraint,
-            tex_appendix=options.tex_appendix,
-            optimizer=optimizer,
-        )
+        with _timed_stage(options, "MATLAB generation/CSE"):
+            return generate_matlab_bundle(
+                plant,
+                output,
+                actuation=system.actuation,
+                constraint=system.constraint,
+                tex_appendix=options.tex_appendix,
+                optimizer=optimizer,
+            )
     except Exception as error:
         steps = []
         if options.wolfram_factor_terms:
@@ -137,8 +159,18 @@ def build_bundle(
     output: str | Path,
     options: BuildOptions = DEFAULT_BUILD_OPTIONS,
 ) -> Path:
+    with _timed_stage(options, "total build"):
+        return _build_bundle(config, output, options)
+
+
+def _build_bundle(
+    config: ModelConfig,
+    output: str | Path,
+    options: BuildOptions,
+) -> Path:
     try:
-        system = derive_system(config)
+        with _timed_stage(options, "model derivation [SymPy]"):
+            system = derive_system(config)
     except Exception as error:
         raise BuildError("model derivation", "SymPy", error) from error
 
@@ -146,10 +178,12 @@ def build_bundle(
         return _materialize_and_generate(system, output, options, None)
 
     try:
-        with WolframKernel(
-            options.wolfram_kernel,
-            timeout=options.wolfram_timeout,
-        ) as kernel:
+        with _timed_stage(options, "Wolfram Kernel startup"):
+            kernel_context = WolframKernel(
+                options.wolfram_kernel,
+                timeout=options.wolfram_timeout,
+            )
+        with kernel_context as kernel:
             return _materialize_and_generate(system, output, options, kernel)
     except BuildError:
         raise
