@@ -109,13 +109,8 @@ uv run --locked --extra wolfram softarm build \
   --out build/extensible-euler-bernoulli-pcs-wolfram
 ```
 
-构建开始时会打印实际执行计划，例如：
-
-```text
-Symbolic plan: derive=SymPy, bias=Wolfram, FactorTerms=off, CSE=SymPy
-```
-
-增加 `--verbose` 可测量当前符号策略的高层构建阶段：
+成功的 `softarm build` 默认不输出内容。增加 `--verbose` 可输出适合直接复制到
+问题报告中的完整构建诊断：
 
 ```shell
 uv run --locked --extra wolfram softarm build \
@@ -127,16 +122,48 @@ uv run --locked --extra wolfram softarm build \
 ```
 
 ```text
-Timing: model derivation [SymPy]: 1.556 s
-Timing: Wolfram Kernel startup: 7.407 s
-Timing: bias differentiation [Wolfram]: 58.440 s
-Timing: MATLAB generation/CSE: 5.804 s
-Timing: total build: 73.256 s
+SoftArm Build Diagnostics
+=========================
+
+Configuration
+-------------
+...
+
+Symbolic Strategy
+-----------------
+...
+
+Build Stages
+------------
+...
+
+Resolved Model
+--------------
+...
+
+Exported Symbolic Functions
+---------------------------
+...
+
+Generated Artifacts
+-------------------
+...
+
+Build Result
+------------
+SUCCESS
 ```
 
-计时从 `build_bundle` 开始，不包括配置文件读取。`MATLAB generation/CSE` 汇总
-所选 `FactorTerms`、CSE、MATLAB/TeX/manifest 生成，不再逐函数拆分。若某阶段
-失败，该阶段及 `total build` 的计时行会附加 `(failed)`。
+报告使用解析后的绝对配置/输出路径和运行时实际可用的 SymPy、Wolfram 信息；
+无法可靠取得的版本或路径不会显示。配置按模型、基座、积分、Ritz、执行器和
+约束分组，并列出推导后包含默认值的完整运行时参数。
+
+核心计时从 `build_bundle` 开始，不包括配置文件读取。`MATLAB generation/CSE`
+汇总所选 `FactorTerms`、CSE、MATLAB/TeX/manifest 生成。随后执行的诊断分析不计入
+`Total build`，并单独报告耗时。每个符号导出函数会显示输出形状、CSE 前后
+`sympy.count_ops`、临时量数量和 MATLAB 文件大小；这些运算数是符号复杂度估计，
+不是硬件 FLOP。若构建失败，已完成阶段保留，失败阶段标记 `(failed)`，错误原因
+仍写到标准错误流。
 
 ### 2.3 Wolfram 优化开关
 

@@ -11,7 +11,7 @@ from .config import ConfigError, load_config
 from .constraints import derive_constraint
 from .derive import derive
 from .local_tools import load_local_tools, local_tool_config_path
-from .pipeline import BuildOptions, build_bundle, symbolic_plan
+from .pipeline import BuildOptions, build_bundle
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -25,7 +25,7 @@ def _parser() -> argparse.ArgumentParser:
     build.add_argument(
         "--verbose",
         action="store_true",
-        help="print elapsed time for each build stage",
+        help="print resolved configuration, symbolic strategy, timings, and artifact metrics",
     )
     build.add_argument("--wolfram-kernel")
     build.add_argument(
@@ -122,9 +122,7 @@ def main(argv: list[str] | None = None) -> int:
             verbose=args.verbose,
         )
         config = load_config(args.config)
-        print(symbolic_plan(options))
-        output = build_bundle(config, args.out, options)
-        print(output)
+        build_bundle(config, args.out, options)
         return 0
     except (ConfigError, RuntimeError, OSError, ValueError) as error:
         print(f"softarm: {error}", file=sys.stderr)

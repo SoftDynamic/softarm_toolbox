@@ -70,7 +70,8 @@ def render_function(
     loads: list[str],
     optimizer: FunctionOptimizer,
 ) -> None:
-    optimized = optimizer.optimize(_flatten(matrix), shape)
+    expressions = _flatten(matrix)
+    optimized = optimizer.optimize(expressions, shape)
     printer = _MatlabPrinter()
     lines = [f"function {output_name} = {name}({','.join(inputs)})", "% Generated from the SymPy model. Do not edit.", "%#codegen"]
     lines.extend(loads)
@@ -83,6 +84,7 @@ def render_function(
     lines.append(f"{output_name} = reshape([{vector}],{dimensions});")
     lines.append("end")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    optimizer.record_rendered_function(name, expressions, optimized, path)
 
 
 def generate_centerline_matlab(

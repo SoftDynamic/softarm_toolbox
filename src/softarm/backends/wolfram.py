@@ -79,6 +79,7 @@ class WolframKernel(AbstractContextManager["WolframKernel"]):
             session_executable = executable.with_name("WolframKernel.exe")
             if session_executable.is_file():
                 executable = session_executable
+        self.executable = executable.resolve()
         bridge = Path(__file__).with_name("wolfram_bridge.wls")
         self.timeout = timeout
         self._lock = threading.Lock()

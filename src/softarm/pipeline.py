@@ -14,6 +14,7 @@ from .codegen.optimization import FunctionOptimizer, SympyCse
 from .config import ModelConfig
 from .constraints import ConstraintModel, derive_constraint
 from .derive import SymbolicPlant, derive
+from .diagnostics import BuildDiagnostics
 from .dynamics import SympyBatchDifferentiator, assemble_bias
 
 
@@ -77,8 +78,11 @@ class BuildError(RuntimeError):
 
 
 @contextmanager
-def _timed_stage(options: BuildOptions, stage: str) -> Iterator[None]:
-    if not options.verbose:
+def _timed_stage(
+    diagnostics: BuildDiagnostics | None,
+    stage: str,
+) -> Iterator[None]:
+    if diagnostics is None:
         yield
         return
     start = time.perf_counter()
@@ -86,10 +90,10 @@ def _timed_stage(options: BuildOptions, stage: str) -> Iterator[None]:
         yield
     except BaseException:
         elapsed = time.perf_counter() - start
-        print(f"Timing: {stage}: {elapsed:.3f} s (failed)")
+        diagnostics.record_timing(stage, elapsed, True)
         raise
     elapsed = time.perf_counter() - start
-    print(f"Timing: {stage}: {elapsed:.3f} s")
+    diagnostics.record_timing(stage, elapsed, False)
 
 
 def derive_system(config: ModelConfig) -> DerivedSystem:
@@ -116,24 +120,30 @@ def _materialize_and_generate(
     output: str | Path,
     options: BuildOptions,
     kernel: WolframKernel | None,
+    diagnostics: BuildDiagnostics | None,
 ) -> Path:
     differentiator = kernel or SympyBatchDifferentiator()
     strategy = "Wolfram" if kernel is not None else "SymPy"
     try:
-        with _timed_stage(options, f"bias differentiation [{strategy}]"):
+        with _timed_stage(diagnostics, f"Bias differentiation [{strategy}]"):
             bias = assemble_bias(system.plant, differentiator)
     except Exception as error:
         raise BuildError("bias differentiation", strategy, error) from error
 
     plant = replace(system.plant, _bias=bias)
+    if diagnostics is not None:
+        diagnostics.capture_plant(plant)
     normalizer = kernel if options.wolfram_factor_terms else None
     eliminator = kernel if options.wolfram_cse else SympyCse()
     optimizer = FunctionOptimizer(
         normalizer=normalizer,
         eliminator=eliminator,
+        collect_diagnostics=diagnostics is not None,
     )
+    if diagnostics is not None:
+        diagnostics.capture_optimizer(optimizer)
     try:
-        with _timed_stage(options, "MATLAB generation/CSE"):
+        with _timed_stage(diagnostics, "MATLAB generation/CSE"):
             return generate_matlab_bundle(
                 plant,
                 output,
@@ -159,32 +169,60 @@ def build_bundle(
     output: str | Path,
     options: BuildOptions = DEFAULT_BUILD_OPTIONS,
 ) -> Path:
-    with _timed_stage(options, "total build"):
-        return _build_bundle(config, output, options)
+    diagnostics = (
+        BuildDiagnostics(config, output, options) if options.verbose else None
+    )
+    try:
+        with _timed_stage(diagnostics, "Total build"):
+            result = _build_bundle(config, output, options, diagnostics)
+    except BaseException:
+        if diagnostics is not None:
+            print(diagnostics.render(success=False), end="")
+        raise
+    if diagnostics is not None:
+        try:
+            with _timed_stage(diagnostics, "Diagnostics analysis"):
+                diagnostics.analyze()
+        except BaseException:
+            print(diagnostics.render(success=False), end="")
+            raise
+        print(diagnostics.render(success=True), end="")
+    return result
 
 
 def _build_bundle(
     config: ModelConfig,
     output: str | Path,
     options: BuildOptions,
+    diagnostics: BuildDiagnostics | None,
 ) -> Path:
     try:
-        with _timed_stage(options, "model derivation [SymPy]"):
+        with _timed_stage(diagnostics, "Model derivation [SymPy]"):
             system = derive_system(config)
     except Exception as error:
         raise BuildError("model derivation", "SymPy", error) from error
+    if diagnostics is not None:
+        diagnostics.capture_system(system)
 
     if options.backend == "sympy":
-        return _materialize_and_generate(system, output, options, None)
+        return _materialize_and_generate(
+            system, output, options, None, diagnostics
+        )
 
     try:
-        with _timed_stage(options, "Wolfram Kernel startup"):
+        with _timed_stage(diagnostics, "Wolfram Kernel startup"):
             kernel_context = WolframKernel(
                 options.wolfram_kernel,
                 timeout=options.wolfram_timeout,
             )
+        if diagnostics is not None:
+            diagnostics.capture_wolfram(kernel_context)
         with kernel_context as kernel:
-            return _materialize_and_generate(system, output, options, kernel)
+            if diagnostics is not None:
+                diagnostics.capture_wolfram(kernel)
+            return _materialize_and_generate(
+                system, output, options, kernel, diagnostics
+            )
     except BuildError:
         raise
     except WolframError as error:

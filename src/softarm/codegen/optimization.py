@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 import sympy as sp
@@ -42,6 +43,14 @@ class OptimizedFunction:
     shape: tuple[int, ...]
 
 
+@dataclass(frozen=True)
+class RenderedFunction:
+    name: str
+    expressions: tuple[sp.Expr, ...]
+    optimized: OptimizedFunction
+    path: Path
+
+
 class FunctionOptimizer:
     """Function-boundary optimization with an in-memory build cache."""
 
@@ -50,12 +59,31 @@ class FunctionOptimizer:
         *,
         normalizer: ExpressionNormalizer | None = None,
         eliminator: CommonSubexpressionEliminator | None = None,
+        collect_diagnostics: bool = False,
     ):
         self._normalizer = normalizer
         self._eliminator = eliminator or SympyCse()
+        self._collect_diagnostics = collect_diagnostics
         self._cache: dict[
             tuple[tuple[sp.Expr, ...], tuple[int, ...]], OptimizedFunction
         ] = {}
+        self._rendered: list[RenderedFunction] = []
+
+    @property
+    def rendered_functions(self) -> tuple[RenderedFunction, ...]:
+        return tuple(self._rendered)
+
+    def record_rendered_function(
+        self,
+        name: str,
+        expressions: Sequence[sp.Expr],
+        optimized: OptimizedFunction,
+        path: Path,
+    ) -> None:
+        if self._collect_diagnostics:
+            self._rendered.append(
+                RenderedFunction(name, tuple(expressions), optimized, path)
+            )
 
     def optimize(
         self,
