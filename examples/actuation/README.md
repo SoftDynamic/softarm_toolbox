@@ -10,9 +10,15 @@
 重新生成参考包：
 
 ```powershell
-softarm build examples/config/extensible_euler_bernoulli_pcs_three_tendon_n2.toml --out examples/generated/extensible_euler_bernoulli_pcs_three_tendon_n2
-softarm build examples/config/extensible_euler_bernoulli_pcs_signed_pair_n2.toml --out examples/generated/extensible_euler_bernoulli_pcs_signed_pair_n2
-softarm build examples/config/euler_bernoulli_ritz_two_signed_pairs_n2.toml --out examples/generated/euler_bernoulli_ritz_two_signed_pairs_n2
+uv run --locked softarm build `
+    examples/config/extensible_euler_bernoulli_pcs_three_tendon_n2.toml `
+    --out examples/generated/extensible_euler_bernoulli_pcs_three_tendon_n2
+uv run --locked softarm build `
+    examples/config/extensible_euler_bernoulli_pcs_signed_pair_n2.toml `
+    --out examples/generated/extensible_euler_bernoulli_pcs_signed_pair_n2
+uv run --locked softarm build `
+    examples/config/euler_bernoulli_ritz_two_signed_pairs_n2.toml `
+    --out examples/generated/euler_bernoulli_ritz_two_signed_pairs_n2
 ```
 
 正拉力遵循 `tau = -Ja.'*tension`。`signed` 的负值表示拮抗绳索对的反向等效

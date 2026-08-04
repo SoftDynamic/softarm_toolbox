@@ -123,8 +123,8 @@
 Python 测试：
 
 ```shell
-python -m ruff check .
-python -m pytest
+uv run --locked ruff check .
+uv run --locked pytest
 ```
 
 MATLAB 与 Simulink 测试：

@@ -63,7 +63,6 @@ $\varepsilon_z$ 为轴向应变。该列表示各梁理论保留的应变分量�
 ```text
 Python                3.12.13
 MATLAB                R2025a
-MATLAB Engine         25.1.2
 Wolfram Mathematica   15.0.1
 ```
 
@@ -78,30 +77,33 @@ bias 的批量求导；`FactorTerms` 和实验性 Wolfram CSE 必须分别通过
 ### 2.1 安装
 
 ```shell
-python -m pip install -r requirements.lock
-python -m pip install -e .
+uv sync --locked
 ```
 
+uv 根据 `.python-version` 使用最新可用的 Python 3.12 补丁版本；开发依赖组默认同步。
 可将 `.softarm.local.toml.example` 复制为 `.softarm.local.toml`，填写本机
-Python、Wolfram Kernel 和 `pdflatex` 路径。Wolfram Kernel 也可在构建命令中使用
+Wolfram Kernel 和 `pdflatex` 路径。Wolfram Kernel 也可在构建命令中使用
 `--wolfram-kernel` 指定；仓库维护命令和 TeX 编译测试优先使用本机配置，避免误用
 系统中同名但版本不同的工具。
 
 ### 2.2 验证、生成与检查
 
 ```shell
-softarm validate examples/config/extensible_euler_bernoulli_pcs_lumped_n2.toml
-softarm build examples/config/extensible_euler_bernoulli_pcs_lumped_n2.toml \
+uv run --locked softarm validate \
+  examples/config/extensible_euler_bernoulli_pcs_lumped_n2.toml
+uv run --locked softarm build \
+  examples/config/extensible_euler_bernoulli_pcs_lumped_n2.toml \
   --backend sympy \
   --target matlab \
   --out build/extensible-euler-bernoulli-pcs
-softarm inspect build/extensible-euler-bernoulli-pcs
+uv run --locked softarm inspect build/extensible-euler-bernoulli-pcs
 ```
 
 使用 Wolfram 加速 bias 批量求导：
 
 ```shell
-softarm build examples/config/extensible_euler_bernoulli_pcs_distributed_n2.toml \
+uv run --locked --extra wolfram softarm build \
+  examples/config/extensible_euler_bernoulli_pcs_distributed_n2.toml \
   --backend wolfram \
   --target matlab \
   --out build/extensible-euler-bernoulli-pcs-wolfram
@@ -132,7 +134,8 @@ Symbolic plan: derive=SymPy, bias=Wolfram, FactorTerms=off, CSE=SymPy
 例如只试用 `FactorTerms`：
 
 ```shell
-softarm build examples/config/extensible_euler_bernoulli_pcs_lumped_n2.toml \
+uv run --locked --extra wolfram softarm build \
+  examples/config/extensible_euler_bernoulli_pcs_lumped_n2.toml \
   --backend wolfram \
   --wolfram-factor-terms \
   --out build/extensible-euler-bernoulli-pcs-factor-terms
@@ -141,7 +144,8 @@ softarm build examples/config/extensible_euler_bernoulli_pcs_lumped_n2.toml \
 例如只试用实验性 Wolfram CSE：
 
 ```shell
-softarm build examples/config/euler_bernoulli_ritz_n2.toml \
+uv run --locked --extra wolfram softarm build \
+  examples/config/euler_bernoulli_ritz_n2.toml \
   --backend wolfram \
   --wolfram-cse \
   --out build/euler-wolfram-cse
@@ -358,7 +362,7 @@ softarm_state_rhs(x,tau_arm,w_vehicle,w_tip,p)
 附加精确符号表达式：
 
 ```shell
-softarm build examples/config/euler_bernoulli_ritz_n2.toml \
+uv run --locked softarm build examples/config/euler_bernoulli_ritz_n2.toml \
   --target matlab \
   --out build/euler \
   --tex-appendix
