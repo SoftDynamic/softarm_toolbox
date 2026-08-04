@@ -3,7 +3,7 @@ function viewer = playbackBackbonePoses(logData,options)
 arguments
     logData = []
     options.AxisLength (1,1) double {mustBePositive} = 0.08
-    options.PlaybackSpeed (1,1) double {mustBePositive} = 0.5
+    options.PlaybackSpeed (1,1) double {mustBePositive} = 1
     options.Bundle (1,1) string = ""
     options.SamplesPerSegment (1,1) double {mustBeInteger, ...
         mustBeGreaterThanOrEqual(options.SamplesPerSegment,2), ...
