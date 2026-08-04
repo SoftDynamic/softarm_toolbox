@@ -4,13 +4,13 @@ import argparse
 import json
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 
 from .actuation import derive_actuation
 from .config import ConfigError, load_config
 from .constraints import derive_constraint
 from .derive import derive
+from .local_tools import load_local_tools, local_tool_config_path
 from .pipeline import BuildOptions, build_bundle, symbolic_plan
 
 
@@ -51,20 +51,14 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _toolbox_root() -> Path:
-    return Path(__file__).resolve().parents[2]
-
-
 def _matlab_path() -> Path:
-    local = _toolbox_root() / ".softarm.local.toml"
+    local = local_tool_config_path()
     if not local.is_file():
         raise FileNotFoundError(
             f"missing {local}; copy the toolbox .softarm.local.toml.example "
             "and set tools.matlab"
         )
-    with local.open("rb") as stream:
-        tools = tomllib.load(stream).get("tools")
-    candidate = tools.get("matlab") if isinstance(tools, dict) else None
+    candidate = load_local_tools(local).get("matlab")
     if not isinstance(candidate, str) or not candidate.strip():
         raise ValueError(f"{local} has no tools.matlab entry")
     executable = Path(candidate)

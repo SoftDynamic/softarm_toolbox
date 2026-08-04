@@ -13,13 +13,21 @@ def test_matlab_path_reads_local_tool_config(tmp_path, monkeypatch):
         f'[tools]\nmatlab = "{executable.as_posix()}"\n',
         encoding="utf-8",
     )
-    monkeypatch.setattr(cli_module, "_toolbox_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        cli_module,
+        "local_tool_config_path",
+        lambda: tmp_path / ".softarm.local.toml",
+    )
 
     assert _matlab_path() == executable
 
 
 def test_matlab_path_requires_local_tool_config(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(cli_module, "_toolbox_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        cli_module,
+        "local_tool_config_path",
+        lambda: tmp_path / ".softarm.local.toml",
+    )
 
     assert cli_main(["matlab", "-batch", "disp(1)"]) == 2
     assert "tools.matlab" in capsys.readouterr().err
@@ -30,7 +38,11 @@ def test_matlab_path_requires_existing_configured_executable(tmp_path, monkeypat
         '[tools]\nmatlab = "missing-matlab.exe"\n',
         encoding="utf-8",
     )
-    monkeypatch.setattr(cli_module, "_toolbox_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        cli_module,
+        "local_tool_config_path",
+        lambda: tmp_path / ".softarm.local.toml",
+    )
 
     assert cli_main(["matlab", "-batch", "disp(1)"]) == 2
     assert "does not exist" in capsys.readouterr().err

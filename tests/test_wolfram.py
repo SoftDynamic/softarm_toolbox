@@ -6,7 +6,8 @@ import pytest
 import sympy as sp
 
 from softarm import pipeline as pipeline_module
-from softarm.backends.wolfram import WolframKernel
+from softarm.backends import wolfram as wolfram_module
+from softarm.backends.wolfram import WolframKernel, _kernel_path
 from softarm.config import IntegrationConfig, ModelConfig
 from softarm.derive import derive
 from softarm.dynamics import assemble_bias
@@ -18,6 +19,19 @@ from softarm.special import (
     SincSqrt,
     SincSqrtD,
 )
+
+
+def test_kernel_path_reads_toolbox_local_config(tmp_path, monkeypatch):
+    executable = tmp_path / "math.exe"
+    executable.touch()
+    local = tmp_path / ".softarm.local.toml"
+    local.write_text(
+        f'[tools]\nwolfram_math = "{executable.as_posix()}"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(wolfram_module, "local_tool_config_path", lambda: local)
+
+    assert _kernel_path(None) == executable
 
 
 def test_wolfram_end_to_end(monkeypatch, tmp_path):

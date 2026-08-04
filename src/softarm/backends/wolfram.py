@@ -5,13 +5,13 @@ import json
 import os
 import shutil
 import threading
-import tomllib
 from collections.abc import Iterable, Sequence
 from contextlib import AbstractContextManager
 from pathlib import Path
 
 import sympy as sp
 
+from ..local_tools import load_local_tools, local_tool_config_path
 from ..special import SPECIAL_DERIVATIVE_HEADS, SPECIAL_FUNCTION_HEADS
 from .protocol import decode_dag, encode_dag
 
@@ -40,10 +40,9 @@ class WolframProtocolError(WolframError):
 
 def _kernel_path(explicit: str | None) -> Path:
     candidate = explicit or os.environ.get("SOFTARM_WOLFRAM_KERNEL")
-    local = Path.cwd() / ".softarm.local.toml"
+    local = local_tool_config_path()
     if not candidate and local.is_file():
-        with local.open("rb") as stream:
-            candidate = tomllib.load(stream).get("tools", {}).get("wolfram_math")
+        candidate = load_local_tools(local).get("wolfram_math")
     if not candidate:
         candidate = shutil.which("math") or shutil.which("wolframscript")
     path = Path(candidate) if candidate else Path("__missing_wolfram_kernel__")
