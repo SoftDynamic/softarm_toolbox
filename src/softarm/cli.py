@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 from .actuation import derive_actuation
@@ -45,12 +47,42 @@ def _parser() -> argparse.ArgumentParser:
     validate.add_argument("config")
     inspect = commands.add_parser("inspect", help="print a generated bundle manifest")
     inspect.add_argument("bundle")
+    commands.add_parser("matlab", help="run the configured MATLAB executable")
     return parser
 
 
+def _toolbox_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _matlab_path() -> Path:
+    local = _toolbox_root() / ".softarm.local.toml"
+    if not local.is_file():
+        raise FileNotFoundError(
+            f"missing {local}; copy the toolbox .softarm.local.toml.example "
+            "and set tools.matlab"
+        )
+    with local.open("rb") as stream:
+        tools = tomllib.load(stream).get("tools")
+    candidate = tools.get("matlab") if isinstance(tools, dict) else None
+    if not isinstance(candidate, str) or not candidate.strip():
+        raise ValueError(f"{local} has no tools.matlab entry")
+    executable = Path(candidate)
+    if not executable.is_file():
+        raise FileNotFoundError(f"configured MATLAB executable does not exist: {executable}")
+    return executable
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
+    command_args = sys.argv[1:] if argv is None else argv
     try:
+        matlab_help = command_args[:1] == ["matlab"] and command_args[1:] in (
+            ["-h"],
+            ["--help"],
+        )
+        if command_args[:1] == ["matlab"] and not matlab_help:
+            return subprocess.run([str(_matlab_path()), *command_args[1:]], check=False).returncode
+        args = _parser().parse_args(command_args)
         if args.command == "validate":
             config = load_config(args.config)
             plant = derive(config)

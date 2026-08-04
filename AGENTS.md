@@ -130,7 +130,7 @@ uv run --locked pytest
 MATLAB 与 Simulink 测试：
 
 ```shell
-matlab -batch "addpath('matlab'); r=runtests('matlab/tests'); assertSuccess(r)"
+uv run --locked softarm matlab -batch "addpath('matlab'); r=runtests('matlab/tests'); assertSuccess(r)"
 ```
 
 模型变更至少覆盖：

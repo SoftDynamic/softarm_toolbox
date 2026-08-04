@@ -82,7 +82,7 @@ uv sync --locked
 
 uv 根据 `.python-version` 使用最新可用的 Python 3.12 补丁版本；开发依赖组默认同步。
 可将 `.softarm.local.toml.example` 复制为 `.softarm.local.toml`，填写本机
-Wolfram Kernel 和 `pdflatex` 路径。Wolfram Kernel 也可在构建命令中使用
+MATLAB、Wolfram Kernel 和 `pdflatex` 路径。Wolfram Kernel 也可在构建命令中使用
 `--wolfram-kernel` 指定；仓库维护命令和 TeX 编译测试优先使用本机配置，避免误用
 系统中同名但版本不同的工具。
 
@@ -383,6 +383,12 @@ TeX 文档依赖 `article`、`amsmath`、`amssymb`、`geometry` 和 `longtable`�
 `.softarm.local.toml` 的 `tools.pdflatex`。
 
 ## 5. MATLAB 接口
+
+MATLAB 命令通过 `tools.matlab` 指定的可执行文件运行。例如重建 Simulink 模型：
+
+```shell
+uv run --locked softarm matlab -batch "addpath('matlab'); build_softarm_plant; build_softarm_constraint_models; build_softarm_actuator_models"
+```
 
 ```matlab
 addpath("matlab")

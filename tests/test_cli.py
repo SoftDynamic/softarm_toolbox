@@ -1,0 +1,50 @@
+from pathlib import Path
+from types import SimpleNamespace
+
+from softarm import cli as cli_module
+from softarm.cli import _matlab_path
+from softarm.cli import main as cli_main
+
+
+def test_matlab_path_reads_local_tool_config(tmp_path, monkeypatch):
+    executable = tmp_path / "matlab.exe"
+    executable.touch()
+    (tmp_path / ".softarm.local.toml").write_text(
+        f'[tools]\nmatlab = "{executable.as_posix()}"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli_module, "_toolbox_root", lambda: tmp_path)
+
+    assert _matlab_path() == executable
+
+
+def test_matlab_path_requires_local_tool_config(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(cli_module, "_toolbox_root", lambda: tmp_path)
+
+    assert cli_main(["matlab", "-batch", "disp(1)"]) == 2
+    assert "tools.matlab" in capsys.readouterr().err
+
+
+def test_matlab_path_requires_existing_configured_executable(tmp_path, monkeypatch, capsys):
+    (tmp_path / ".softarm.local.toml").write_text(
+        '[tools]\nmatlab = "missing-matlab.exe"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli_module, "_toolbox_root", lambda: tmp_path)
+
+    assert cli_main(["matlab", "-batch", "disp(1)"]) == 2
+    assert "does not exist" in capsys.readouterr().err
+
+
+def test_matlab_command_forwards_arguments_and_exit_code(monkeypatch):
+    executable = Path("configured-matlab.exe")
+    calls = []
+    monkeypatch.setattr(cli_module, "_matlab_path", lambda: executable)
+    monkeypatch.setattr(
+        cli_module.subprocess,
+        "run",
+        lambda command, check: calls.append((command, check)) or SimpleNamespace(returncode=7),
+    )
+
+    assert cli_main(["matlab", "-batch", "disp(1)"]) == 7
+    assert calls == [([str(executable), "-batch", "disp(1)"], False)]

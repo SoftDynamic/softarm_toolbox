@@ -24,6 +24,7 @@ def test_wolfram_end_to_end(monkeypatch, tmp_path):
     local = Path(__file__).parents[1] / ".softarm.local.toml"
     if not local.is_file():
         pytest.skip("no local Wolfram tool configuration")
+    pytest.importorskip("wolframclient")
     config = ModelConfig(
         rod="euler_bernoulli", parameterization="ritz", segments=2,
         integration=IntegrationConfig("analytic"),
