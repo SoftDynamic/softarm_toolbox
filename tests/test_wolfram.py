@@ -8,7 +8,7 @@ import sympy as sp
 from softarm import pipeline as pipeline_module
 from softarm.backends import wolfram as wolfram_module
 from softarm.backends.wolfram import WolframKernel, _kernel_path
-from softarm.config import IntegrationConfig, ModelConfig
+from softarm.config import DynamicsConfig, IntegrationConfig, ModelConfig
 from softarm.derive import derive
 from softarm.dynamics import assemble_bias
 from softarm.pipeline import BuildOptions, build_bundle
@@ -41,12 +41,14 @@ def test_wolfram_end_to_end(monkeypatch, tmp_path):
     pytest.importorskip("wolframclient")
     config = ModelConfig(
         rod="euler_bernoulli", parameterization="ritz", segments=2,
+        dynamics=DynamicsConfig("symbolic_lagrange"),
         integration=IntegrationConfig("analytic"),
         ritz_x=(0.0, 0.0, 1.5, -0.5), ritz_y=(0.0, 0.0, 1.5, -0.5),
     )
     x = sp.Symbol("x", real=True, nonnegative=True)
     plant = derive(ModelConfig(
         rod="extensible_euler_bernoulli", parameterization="pcs", segments=1,
+        dynamics=DynamicsConfig("symbolic_lagrange"),
         inertia="lumped",
         integration=IntegrationConfig(),
     ))

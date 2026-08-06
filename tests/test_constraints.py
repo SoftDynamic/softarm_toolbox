@@ -1,7 +1,13 @@
 import numpy as np
 import sympy as sp
 
-from softarm.config import BaseConfig, ConstraintConfig, IntegrationConfig, ModelConfig
+from softarm.config import (
+    BaseConfig,
+    ConstraintConfig,
+    DynamicsConfig,
+    IntegrationConfig,
+    ModelConfig,
+)
 from softarm.constraints import derive_constraint
 from softarm.derive import derive
 from softarm.special import LAMBDA_MODULES
@@ -12,6 +18,7 @@ def _contact(friction: float = 0.3):
         rod="extensible_euler_bernoulli",
         parameterization="pcs",
         segments=1,
+        dynamics=DynamicsConfig("symbolic_lagrange"),
         inertia="lumped",
         integration=IntegrationConfig(),
         base=BaseConfig("floating_rpy"),

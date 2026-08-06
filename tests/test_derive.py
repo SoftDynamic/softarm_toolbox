@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 import sympy as sp
 
-from softarm.config import BaseConfig, IntegrationConfig, ModelConfig, load_config
+from softarm.config import BaseConfig, DynamicsConfig, IntegrationConfig, ModelConfig, load_config
 from softarm.derive import derive, register_model
 from softarm.special import LAMBDA_MODULES
 
@@ -29,6 +29,7 @@ def test_external_combination_registration_runs_its_validator():
     register_model("custom_rod", "custom_parameterization", builder, validator=validator)
     config = ModelConfig(
         rod="custom_rod", parameterization="custom_parameterization", segments=1,
+        dynamics=DynamicsConfig("symbolic_lagrange"),
         inertia="lumped",
     )
     assert derive(config).config == config
@@ -75,6 +76,7 @@ def test_material_kinematics_respects_floating_base_and_mount():
     mount_rpy = (0.17, -0.11, 0.08)
     plant = derive(ModelConfig(
         rod="extensible_euler_bernoulli", parameterization="pcs", segments=1,
+        dynamics=DynamicsConfig("symbolic_lagrange"),
         inertia="lumped", integration=IntegrationConfig(),
         base=BaseConfig("floating_rpy", mount_xyz, mount_rpy),
     ))
@@ -149,6 +151,7 @@ def test_extensible_euler_bernoulli_ritz_has_three_displacement_coordinates():
 def test_pac_coordinates_reference_lengths_and_anisotropic_hankel_energy():
     euler = derive(ModelConfig(
         rod="euler_bernoulli", parameterization="pac", segments=1,
+        dynamics=DynamicsConfig("symbolic_lagrange"),
         inertia="lumped", integration=IntegrationConfig(),
         parameters={"length": 0.5, "EI_x": 2.0, "EI_y": 3.0, "GJ": 0.4},
     ))
@@ -165,6 +168,7 @@ def test_pac_coordinates_reference_lengths_and_anisotropic_hankel_energy():
 
     extensible = derive(ModelConfig(
         rod="extensible_euler_bernoulli", parameterization="pac", segments=1,
+        dynamics=DynamicsConfig("symbolic_lagrange"),
         inertia="lumped", integration=IntegrationConfig(),
     ))
     assert extensible.arm_coordinate_names == ["c0_1", "c1_1", "phi1", "l1"]
@@ -179,10 +183,12 @@ def test_pac_coordinates_reference_lengths_and_anisotropic_hankel_energy():
 def test_floating_base_has_coupled_coordinates_and_wrench_map():
     fixed = derive(ModelConfig(
         rod="extensible_euler_bernoulli", parameterization="pcs", segments=1,
+        dynamics=DynamicsConfig("symbolic_lagrange"),
         inertia="lumped", integration=IntegrationConfig()
     ))
     floating = derive(ModelConfig(
         rod="extensible_euler_bernoulli", parameterization="pcs", segments=1,
+        dynamics=DynamicsConfig("symbolic_lagrange"),
         inertia="lumped", integration=IntegrationConfig(),
         base=BaseConfig("floating_rpy"),
     ))
@@ -219,6 +225,7 @@ def test_floating_base_has_coupled_coordinates_and_wrench_map():
 def test_cosserat_pcs_lumped_shapes_energy_and_nominal_mass():
     plant = derive(ModelConfig(
         rod="cosserat", parameterization="pcs", segments=1, inertia="lumped",
+        dynamics=DynamicsConfig("symbolic_lagrange"),
         integration=IntegrationConfig(),
     ))
     assert plant.arm_coordinate_names == ["kx1", "ky1", "kz1", "vx1", "vy1", "vz1"]

@@ -22,7 +22,8 @@ from .modeling import (
     ModelDefinitionBuilder,
     SectionProperties,
 )
-from .models import RuntimeParameter, SymbolicPlant
+from .models import PlantModel, RecursivePlant, RuntimeParameter, SymbolicPlant
+from .recursive import RecursiveInverseDynamicsAssembler
 
 ModelBuilder = Callable[[ModelConfig], "SymbolicPlant"]
 ModelValidator = Callable[[ModelConfig], None]
@@ -588,7 +589,7 @@ def _validate_pac(config: ModelConfig) -> None:
         raise ConfigError("PAC inertia must be 'distributed' or 'lumped'")
 
 
-_CACHE: dict[str, SymbolicPlant] = {}
+_CACHE: dict[str, PlantModel] = {}
 
 
 _MODELS: dict[tuple[str, str], ModelDefinitionBuilder] = {
@@ -638,7 +639,7 @@ def register_model(
         _MODELS[key] = _LegacyPlantBuilder(builder, validator)
 
 
-def derive(config: ModelConfig) -> SymbolicPlant:
+def derive(config: ModelConfig) -> PlantModel:
     combination = (config.rod, config.parameterization)
     try:
         builder = _MODELS[combination]
@@ -648,6 +649,7 @@ def derive(config: ModelConfig) -> SymbolicPlant:
         "rod": config.rod,
         "parameterization": config.parameterization,
         "segments": config.segments,
+        "dynamics": config.dynamics.formulation,
         "inertia": config.inertia,
         "integration": [config.integration.method, config.integration.order],
         "parameters": config.parameters,
@@ -657,10 +659,25 @@ def derive(config: ModelConfig) -> SymbolicPlant:
         "base": [config.base.mode, config.base.mount_xyz, config.base.mount_rpy],
     }, sort_keys=True)
     if key not in _CACHE:
-        plant = builder.build(config, SymbolicLagrangeAssembler())
-        if not isinstance(plant, SymbolicPlant):
-            raise TypeError("registered model builder did not return SymbolicPlant")
+        if config.dynamics.formulation == "symbolic_lagrange":
+            assembler = SymbolicLagrangeAssembler()
+        else:
+            if isinstance(builder, _LegacyPlantBuilder):
+                raise ValueError(
+                    "legacy function model builders support only symbolic_lagrange"
+                )
+            assembler = RecursiveInverseDynamicsAssembler()
+        plant = builder.build(config, assembler)
         _CACHE[key] = plant
     # Actuation is deliberately not part of the expensive physical-model cache,
     # but callers must retain the actuation attached to their own configuration.
-    return replace(_CACHE[key], config=config, _bias=None)
+    cached = _CACHE[key]
+    if isinstance(cached, SymbolicPlant):
+        return replace(cached, config=config, _bias=None)
+    if isinstance(cached, RecursivePlant):
+        return replace(
+            cached,
+            config=config,
+            definition=replace(cached.definition, config=config),
+        )
+    raise TypeError("registered model builder returned an unsupported plant type")

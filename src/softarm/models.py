@@ -89,3 +89,31 @@ class SymbolicPlant(PlantModel):
 
             self._bias = SymbolicLagrangeAssembler().assemble_bias(self)
         return self._bias
+
+
+@dataclass
+class RecursivePlant(PlantModel):
+    """Algorithmic plant whose dynamics are evaluated section by section."""
+
+    config: ModelConfig
+    q: sp.Matrix
+    dq: sp.Matrix
+    base_q: sp.Matrix
+    base_dq: sp.Matrix
+    arm_q: sp.Matrix
+    arm_dq: sp.Matrix
+    parameters: tuple[RuntimeParameter, ...]
+    kinematics: sp.Matrix
+    end_jacobian: sp.Matrix
+    base_transform: sp.Matrix
+    end_transform: sp.Matrix
+    base_jacobian: sp.Matrix
+    vehicle_wrench_map: sp.Matrix
+    arm_force_map: sp.Matrix
+    definition: object
+
+    @property
+    def bias(self) -> sp.Matrix:
+        raise TypeError(
+            "recursive dynamics are evaluated algorithmically in the generated bundle"
+        )

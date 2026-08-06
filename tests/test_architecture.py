@@ -6,6 +6,7 @@ from pathlib import Path
 
 from softarm import (
     DynamicsAssembler,
+    LocalVariationalKernel,
     ModelDefinitionBuilder,
     PlantModel,
     SectionKinematics,
@@ -23,6 +24,7 @@ DOMAIN_MODULES = (
     "integration.py",
     "modeling.py",
     "models.py",
+    "recursive.py",
     "special.py",
 )
 
@@ -32,6 +34,7 @@ def test_modeling_interfaces_are_abstract_and_symbolic_plant_implements_them():
     assert inspect.isabstract(SectionKinematics)
     assert inspect.isabstract(ModelDefinitionBuilder)
     assert inspect.isabstract(DynamicsAssembler)
+    assert inspect.isabstract(LocalVariationalKernel)
     assert issubclass(SymbolicPlant, PlantModel)
     assert issubclass(SymbolicLagrangeAssembler, DynamicsAssembler)
 

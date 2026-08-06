@@ -16,7 +16,7 @@ from .constraints import ConstraintModel, derive_constraint
 from .derive import derive
 from .diagnostics import BuildDiagnostics
 from .dynamics import SympyBatchDifferentiator, assemble_bias
-from .models import SymbolicPlant
+from .models import PlantModel, RecursivePlant, SymbolicPlant
 
 
 @dataclass(frozen=True)
@@ -48,7 +48,7 @@ class BuildOptions:
 
 @dataclass(frozen=True)
 class DerivedSystem:
-    plant: SymbolicPlant
+    plant: PlantModel
     actuation: ActuationModel | None
     constraint: ConstraintModel | None
 
@@ -99,6 +99,8 @@ def _timed_stage(
 
 def derive_system(config: ModelConfig) -> DerivedSystem:
     plant = derive(config)
+    if isinstance(plant, RecursivePlant) and config.constraint is not None:
+        raise ValueError("recursive dynamics do not yet support constraints")
     return DerivedSystem(
         plant=plant,
         actuation=derive_actuation(plant),
@@ -123,6 +125,28 @@ def _materialize_and_generate(
     kernel: WolframKernel | None,
     diagnostics: BuildDiagnostics | None,
 ) -> Path:
+    if isinstance(system.plant, RecursivePlant):
+        optimizer = FunctionOptimizer(
+            eliminator=SympyCse(),
+            collect_diagnostics=diagnostics is not None,
+        )
+        if diagnostics is not None:
+            diagnostics.capture_plant(system.plant)
+            diagnostics.capture_optimizer(optimizer)
+        try:
+            with _timed_stage(diagnostics, "MATLAB recursive-kernel generation/CSE"):
+                return generate_matlab_bundle(
+                    system.plant,
+                    output,
+                    actuation=system.actuation,
+                    constraint=None,
+                    tex_appendix=options.tex_appendix,
+                    optimizer=optimizer,
+                )
+        except Exception as error:
+            raise BuildError("code generation", "recursive + SymPy CSE", error) from error
+    if not isinstance(system.plant, SymbolicPlant):
+        raise TypeError("unsupported plant representation")
     differentiator = kernel or SympyBatchDifferentiator()
     strategy = "Wolfram" if kernel is not None else "SymPy"
     try:
@@ -197,6 +221,11 @@ def _build_bundle(
     options: BuildOptions,
     diagnostics: BuildDiagnostics | None,
 ) -> Path:
+    if config.dynamics.formulation == "recursive":
+        if options.backend != "sympy":
+            raise ValueError("recursive dynamics require backend='sympy'")
+        if options.tex_appendix:
+            raise ValueError("recursive dynamics do not support --tex-appendix")
     try:
         with _timed_stage(diagnostics, "Model derivation [SymPy]"):
             system = derive_system(config)

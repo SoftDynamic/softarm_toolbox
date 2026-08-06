@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..actuation import ActuationModel
-from ..models import SymbolicPlant
+from ..models import PlantModel
 from .matlab import render_function, symbol_loads
 from .optimization import FunctionOptimizer
 
@@ -24,7 +24,7 @@ def clear_actuator_functions(output: str | Path) -> None:
 
 
 def generate_actuator_matlab(
-    plant: SymbolicPlant,
+    plant: PlantModel,
     actuation: ActuationModel,
     output: str | Path,
     optimizer: FunctionOptimizer,

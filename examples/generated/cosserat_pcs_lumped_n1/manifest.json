@@ -14,7 +14,8 @@
       0.0,
       0.0
     ],
-    "centerline": true
+    "centerline": true,
+    "dynamics_formulation": "symbolic_lagrange"
   },
   "coordinates": {
     "base": [],

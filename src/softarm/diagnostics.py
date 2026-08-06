@@ -12,7 +12,7 @@ from .codegen.optimization import FunctionOptimizer, RenderedFunction
 from .config import ModelConfig
 
 if TYPE_CHECKING:
-    from .models import SymbolicPlant
+    from .models import PlantModel
     from .pipeline import BuildOptions, DerivedSystem
 
 
@@ -97,7 +97,7 @@ class BuildDiagnostics:
         self.options = options
         self.timings: list[StageTiming] = []
         self.system: DerivedSystem | None = None
-        self.plant: SymbolicPlant | None = None
+        self.plant: PlantModel | None = None
         self.optimizer: FunctionOptimizer | None = None
         self.wolfram_executable: Path | None = None
         self.wolfram_version: str | None = None
@@ -123,7 +123,7 @@ class BuildDiagnostics:
         self.system = system
         self.plant = system.plant
 
-    def capture_plant(self, plant: SymbolicPlant) -> None:
+    def capture_plant(self, plant: PlantModel) -> None:
         self.plant = plant
 
     def capture_optimizer(self, optimizer: FunctionOptimizer) -> None:
@@ -196,6 +196,11 @@ class BuildDiagnostics:
             _setting("Rod", self.config.rod, indent=2),
             _setting("Parameterization", self.config.parameterization, indent=2),
             _setting("Sections", self.config.segments, indent=2),
+            _setting(
+                "Dynamics formulation",
+                self.config.dynamics.formulation,
+                indent=2,
+            ),
         ])
         raw_model = None if self._raw is None else self._raw.get("model", {})
         inertia_default = raw_model is not None and "inertia" not in raw_model
@@ -380,17 +385,17 @@ class BuildDiagnostics:
                 indent=2,
             ),
             "",
-            "Key symbolic outputs",
-            _setting("Mass matrix M", _format_shape(plant.mass.shape), indent=2),
+            "Dynamics outputs",
+            _setting("Formulation", plant.config.dynamics.formulation, indent=2),
+            _setting("Mass matrix M", _format_shape((nq, nq)), indent=2),
             _setting("Bias vector h", _format_shape((nq, 1)), indent=2),
-            _setting("Damping matrix D", _format_shape(plant.damping.shape), indent=2),
             _setting(
                 "Section kinematics H",
                 _format_shape((4, 4, plant.config.segments)),
                 indent=2,
             ),
-            _setting("End Jacobian Je", _format_shape(plant.end_jacobian.shape), indent=2),
-            _setting("Base Jacobian Jb", _format_shape(plant.base_jacobian.shape), indent=2),
+            _setting("End Jacobian Je", _format_shape((6, nq)), indent=2),
+            _setting("Base Jacobian Jb", _format_shape((6, nq)), indent=2),
             _setting(
                 "Vehicle wrench map Bv",
                 _format_shape(plant.vehicle_wrench_map.shape),

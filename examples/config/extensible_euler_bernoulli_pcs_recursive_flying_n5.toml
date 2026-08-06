@@ -1,0 +1,90 @@
+[model]
+rod = "extensible_euler_bernoulli"
+parameterization = "pcs"
+segments = 5
+inertia = "lumped"
+
+[dynamics]
+formulation = "recursive"
+
+[base]
+mode = "floating_rpy"
+mount_xyz = [0.0, 0.0, 0.08]
+mount_rpy = [0.0, 0.0, 0.0]
+
+[integration]
+method = "analytic"
+
+[parameters]
+gravity = 9.81
+vehicle_mass = 1.5
+vehicle_Ixx = 0.030
+vehicle_Iyy = 0.030
+vehicle_Izz = 0.050
+rest_length = 0.12
+mass = 0.04
+Ixx = 0.00005
+Iyy = 0.00005
+Izz = 0.000005
+k_bx = 0.25
+k_by = 0.25
+k_l = 80.0
+d_bx = 0.01
+d_by = 0.01
+d_l = 0.05
+tip_mass = 0.05
+tip_Ixx = 0.001
+tip_Iyy = 0.001
+tip_Izz = 0.0002
+
+[actuation]
+family = "tendon"
+acceleration = "none"
+
+[[actuation.channels]]
+name = "bend_x"
+kind = "signed"
+[[actuation.channels.spans]]
+section = 1
+radius = 0.012
+angle = 0.0
+[[actuation.channels.spans]]
+section = 2
+radius = 0.012
+angle = 0.0
+[[actuation.channels.spans]]
+section = 3
+radius = 0.012
+angle = 0.0
+[[actuation.channels.spans]]
+section = 4
+radius = 0.012
+angle = 0.0
+[[actuation.channels.spans]]
+section = 5
+radius = 0.012
+angle = 0.0
+
+[[actuation.channels]]
+name = "bend_y"
+kind = "signed"
+[[actuation.channels.spans]]
+section = 1
+radius = 0.012
+angle = 1.5707963267948966
+[[actuation.channels.spans]]
+section = 2
+radius = 0.012
+angle = 1.5707963267948966
+[[actuation.channels.spans]]
+section = 3
+radius = 0.012
+angle = 1.5707963267948966
+[[actuation.channels.spans]]
+section = 4
+radius = 0.012
+angle = 1.5707963267948966
+[[actuation.channels.spans]]
+section = 5
+radius = 0.012
+angle = 1.5707963267948966

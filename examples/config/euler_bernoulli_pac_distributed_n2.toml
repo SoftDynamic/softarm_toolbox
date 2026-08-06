@@ -25,3 +25,6 @@ tip_mass = 0.10
 tip_Ixx = 0.01
 tip_Iyy = 0.01
 tip_Izz = 0.01
+
+[dynamics]
+formulation = "symbolic_lagrange"

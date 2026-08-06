@@ -228,12 +228,33 @@ uv run --locked --extra wolfram softarm build \
 | 配置节 | 用途 |
 | --- | --- |
 | `[model]` | Rod 理论、空间参数化、段数和惯性类型 |
+| `[dynamics]` | 必填的动力学装配方法：`symbolic_lagrange` 或 `recursive` |
 | `[base]` | 固定或浮动基座及安装位姿 |
 | `[integration]` | 材料坐标积分方法与阶数 |
 | `[ritz]` | Ritz 参数化的归一化多项式 |
 | `[parameters]` | 几何、惯性、弹性、阻尼和载荷参数 |
 | `[actuation]` | 执行器族、通道及加速度模式 |
 | `[constraint]` | 接触或其他加速度级约束 |
+
+每个配置都必须显式选择动力学装配方法，不提供默认值。`symbolic_lagrange`
+保留全局 SymPy 欧拉–拉格朗日推导；`recursive` 生成逐段局部核，并在 MATLAB
+运行时执行前向运动传播和反向力旋量回拉。递推模式不接受 Wolfram 后端选项或
+符号 TeX appendix；现有 displacement-Ritz 由保持一阶小挠度语义的 affine
+递推核处理，并未引入 strain-Ritz。
+
+两个可直接构建的递推示例分别覆盖固定基座多段模型，以及浮动基座、轴向伸缩和
+跨段 tendon 通道：
+
+```shell
+uv run --locked softarm build \
+  examples/config/euler_bernoulli_pcs_recursive_n20.toml \
+  --target matlab \
+  --out examples/generated/euler_bernoulli_pcs_recursive_n20
+uv run --locked softarm build \
+  examples/config/extensible_euler_bernoulli_pcs_recursive_flying_n5.toml \
+  --target matlab \
+  --out examples/generated/extensible_euler_bernoulli_pcs_recursive_flying_n5
+```
 
 ### 3.1 模型与积分
 
@@ -245,6 +266,9 @@ rod = "extensible_euler_bernoulli"
 parameterization = "pcs"
 segments = 2
 inertia = "lumped"
+
+[dynamics]
+formulation = "symbolic_lagrange"
 
 [integration]
 method = "analytic"
@@ -262,6 +286,9 @@ parameterization = "pcs"
 segments = 1
 inertia = "distributed"
 
+[dynamics]
+formulation = "symbolic_lagrange"
+
 [integration]
 method = "gauss"
 order = 2
@@ -275,6 +302,9 @@ rod = "euler_bernoulli"
 parameterization = "pac"
 segments = 2
 inertia = "distributed"
+
+[dynamics]
+formulation = "symbolic_lagrange"
 
 [integration]
 method = "gauss"
@@ -302,6 +332,9 @@ $$
 rod = "euler_bernoulli"
 parameterization = "ritz"
 segments = 2
+
+[dynamics]
+formulation = "symbolic_lagrange"
 
 [ritz]
 x = [0.0, 0.0, 1.5, -0.5]

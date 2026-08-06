@@ -18,7 +18,9 @@ names = [
     "extensible_euler_bernoulli_pac_distributed_n2", ...
     "euler_bernoulli_ritz_n2","euler_bernoulli_pcs_n2", ...
     "extensible_euler_bernoulli_ritz_n2", ...
-    "cosserat_pcs_lumped_n1","cosserat_pcs_distributed_tendon_n1"
+    "cosserat_pcs_lumped_n1","cosserat_pcs_distributed_tendon_n1", ...
+    "euler_bernoulli_pcs_recursive_n20", ...
+    "extensible_euler_bernoulli_pcs_recursive_flying_n5"
 ];
 for name = names
     bundle = fullfile(testCase.TestData.root,"examples","generated",name);
@@ -41,6 +43,26 @@ for name = names
         zeros(6,1),zeros(6,1),plant.parameters);
     verifyTrue(testCase,all(isfinite(dx)));
 end
+end
+
+function testRecursiveReferenceBundles(testCase)
+root = testCase.TestData.root;
+fixed = softarm.loadModel(fullfile(root,"examples","generated", ...
+    "euler_bernoulli_pcs_recursive_n20"));
+verifyEqual(testCase,string(fixed.manifest.model.dynamics_formulation),"recursive");
+verifyEqual(testCase,fixed.nq,40);
+
+flying = softarm.loadModel(fullfile(root,"examples","generated", ...
+    "extensible_euler_bernoulli_pcs_recursive_flying_n5"));
+verifyEqual(testCase,string(flying.manifest.model.dynamics_formulation),"recursive");
+verifyEqual(testCase,[flying.nbase flying.narm flying.nq],[6 15 21]);
+verifyEqual(testCase,flying.actuation.count,2);
+q = nominalConfiguration(flying);
+M = flying.mass(q,flying.parameters);
+verifyGreaterThan(testCase,norm(M(1:6,7:end),"fro"),0);
+Ja = flying.actuation.jacobian(q,flying.parameters);
+verifySize(testCase,Ja,[2 15]);
+verifyEqual(testCase,nnz(abs(Ja)>1e-12),10);
 end
 
 function testCosseratReferenceAndTendon(testCase)

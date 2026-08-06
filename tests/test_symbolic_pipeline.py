@@ -4,7 +4,7 @@ import sympy as sp
 from softarm.backends.protocol import decode_dag, encode_dag
 from softarm.backends.wolfram import WolframKernel, WolframProtocolError
 from softarm.codegen.optimization import FunctionOptimizer, SympyCse
-from softarm.config import IntegrationConfig, ModelConfig
+from softarm.config import DynamicsConfig, IntegrationConfig, ModelConfig
 from softarm.derive import derive
 from softarm.dynamics import SympyBatchDifferentiator, assemble_bias
 from softarm.pipeline import BuildOptions, symbolic_plan
@@ -57,6 +57,7 @@ def test_bias_uses_the_single_batch_derivative_formula():
         rod="euler_bernoulli",
         parameterization="ritz",
         segments=1,
+        dynamics=DynamicsConfig("symbolic_lagrange"),
         integration=IntegrationConfig("analytic"),
         ritz_x=(0.0, 0.0, 1.5, -0.5),
         ritz_y=(0.0, 0.0, 1.5, -0.5),

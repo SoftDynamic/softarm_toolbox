@@ -26,6 +26,11 @@ class BaseConfig:
 
 
 @dataclass(frozen=True)
+class DynamicsConfig:
+    formulation: str
+
+
+@dataclass(frozen=True)
 class TendonSpanConfig:
     section: int
     radius: float
@@ -58,6 +63,7 @@ class ModelConfig:
     rod: str
     parameterization: str
     segments: int
+    dynamics: DynamicsConfig
     inertia: str = "distributed"
     integration: IntegrationConfig = field(default_factory=IntegrationConfig)
     parameters: dict[str, Any] = field(default_factory=dict)
@@ -211,6 +217,16 @@ def load_config(path: str | Path) -> ModelConfig:
         raise ConfigError("model.segments must be positive")
     inertia = str(model.get("inertia", "distributed")).lower()
 
+    dynamics_raw = raw.get("dynamics")
+    if not isinstance(dynamics_raw, dict):
+        raise ConfigError("dynamics must be a TOML table")
+    formulation = str(dynamics_raw.get("formulation", "")).lower()
+    if formulation not in {"symbolic_lagrange", "recursive"}:
+        raise ConfigError(
+            "dynamics.formulation must be explicitly "
+            "'symbolic_lagrange' or 'recursive'"
+        )
+
     integration_raw = raw.get("integration", {})
     method = str(integration_raw.get("method", "analytic")).lower()
     if method not in {"analytic", "gauss"}:
@@ -242,6 +258,7 @@ def load_config(path: str | Path) -> ModelConfig:
         rod=rod,
         parameterization=parameterization,
         segments=segments,
+        dynamics=DynamicsConfig(formulation),
         inertia=inertia,
         integration=IntegrationConfig(method, order),
         parameters=parameters,

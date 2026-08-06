@@ -10,7 +10,7 @@ from softarm import pipeline as pipeline_module
 from softarm.backends.wolfram import WolframUnavailableError
 from softarm.cli import main as cli_main
 from softarm.codegen.optimization import SympyCse
-from softarm.config import IntegrationConfig, ModelConfig, load_config
+from softarm.config import DynamicsConfig, IntegrationConfig, ModelConfig, load_config
 from softarm.dynamics import SympyBatchDifferentiator
 from softarm.pipeline import BuildError, BuildOptions, build_bundle
 
@@ -20,6 +20,7 @@ def _config() -> ModelConfig:
         rod="euler_bernoulli",
         parameterization="ritz",
         segments=1,
+        dynamics=DynamicsConfig("symbolic_lagrange"),
         integration=IntegrationConfig("analytic"),
         ritz_x=(0.0, 0.0, 1.5, -0.5),
         ritz_y=(0.0, 0.0, 1.5, -0.5),
@@ -324,6 +325,7 @@ def test_verbose_report_resolves_defaults_and_function_metrics(
     config_path.write_text(
         "# raw comments must not be echoed\n"
         '[model]\nrod="euler_bernoulli"\nparameterization="ritz"\nsegments=1\n'
+        '[dynamics]\nformulation="symbolic_lagrange"\n'
         '[ritz]\nx=[0,0,1.5,-0.5]\ny=[0,0,1.5,-0.5]\n',
         encoding="utf-8",
     )

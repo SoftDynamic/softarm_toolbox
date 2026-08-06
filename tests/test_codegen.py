@@ -12,6 +12,7 @@ from softarm.config import (
     ActuationConfig,
     BaseConfig,
     ConstraintConfig,
+    DynamicsConfig,
     IntegrationConfig,
     ModelConfig,
     TendonChannelConfig,
@@ -27,6 +28,7 @@ ROOT = Path(__file__).parents[1]
 def _small_plant():
     return derive(ModelConfig(
         rod="euler_bernoulli", parameterization="ritz", segments=1,
+        dynamics=DynamicsConfig("symbolic_lagrange"),
         integration=IntegrationConfig("analytic"),
         ritz_x=(0.0, 0.0, 1.5, -0.5), ritz_y=(0.0, 0.0, 1.5, -0.5),
     ))
@@ -93,6 +95,7 @@ def test_reference_bundles_include_all_fixed_matlab_helpers():
 def test_pac_bundle_contains_moment_helpers_and_public_coordinates(tmp_path):
     plant = derive(ModelConfig(
         rod="extensible_euler_bernoulli", parameterization="pac", segments=1,
+        dynamics=DynamicsConfig("symbolic_lagrange"),
         inertia="lumped", integration=IntegrationConfig(),
     ))
     generate_matlab_bundle(plant, tmp_path)
@@ -180,6 +183,7 @@ def test_force_only_actuation_omits_strict_acceleration_function(tmp_path):
 def test_constraint_bundle_has_manifest_metadata_and_solver(tmp_path):
     config = ModelConfig(
         rod="euler_bernoulli", parameterization="ritz", segments=1,
+        dynamics=DynamicsConfig("symbolic_lagrange"),
         integration=IntegrationConfig("analytic"),
         ritz_x=(0.0, 0.0, 1.5, -0.5), ritz_y=(0.0, 0.0, 1.5, -0.5),
         constraint=ConstraintConfig("plane_point_contact", {

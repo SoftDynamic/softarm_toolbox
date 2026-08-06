@@ -9,7 +9,7 @@ from sympy.printing.octave import OctaveCodePrinter
 
 from ..actuation import ActuationModel
 from ..constraints import ConstraintModel
-from ..models import SymbolicPlant
+from ..models import PlantModel, RecursivePlant, SymbolicPlant
 from .optimization import FunctionOptimizer
 
 
@@ -153,13 +153,28 @@ _HELPERS = {
 
 
 def generate_matlab_bundle(
-    plant: SymbolicPlant,
+    plant: PlantModel,
     output: str | Path,
     actuation: ActuationModel | None = None,
     constraint: ConstraintModel | None = None,
     tex_appendix: bool = False,
     optimizer: FunctionOptimizer | None = None,
 ) -> Path:
+    if isinstance(plant, RecursivePlant):
+        if constraint is not None:
+            raise ValueError("recursive dynamics do not yet support constraints")
+        if tex_appendix:
+            raise ValueError("recursive dynamics do not support a symbolic TeX appendix")
+        from .recursive_matlab import generate_recursive_matlab_bundle
+
+        return generate_recursive_matlab_bundle(
+            plant,
+            output,
+            actuation=actuation,
+            optimizer=optimizer,
+        )
+    if not isinstance(plant, SymbolicPlant):
+        raise TypeError("unsupported plant representation")
     function_optimizer = optimizer or FunctionOptimizer()
     target = Path(output).resolve()
     target.mkdir(parents=True, exist_ok=True)
@@ -249,6 +264,7 @@ def generate_matlab_bundle(
             "mount_xyz": plant.config.base.mount_xyz,
             "mount_rpy": plant.config.base.mount_rpy,
             "centerline": has_centerline,
+            "dynamics_formulation": "symbolic_lagrange",
         },
         "coordinates": {
             "base": plant.base_coordinate_names,

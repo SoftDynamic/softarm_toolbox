@@ -18,6 +18,7 @@ from softarm.config import (
     ActuationConfig,
     BaseConfig,
     ConstraintConfig,
+    DynamicsConfig,
     IntegrationConfig,
     ModelConfig,
     TendonChannelConfig,
@@ -52,6 +53,7 @@ def _euler_config(**changes):
         rod="euler_bernoulli",
         parameterization="ritz",
         segments=1,
+        dynamics=DynamicsConfig("symbolic_lagrange"),
         integration=IntegrationConfig("analytic"),
         ritz_x=(0.0, 0.0, 1.5, -0.5),
         ritz_y=(0.0, 0.0, 1.5, -0.5),
@@ -63,6 +65,7 @@ def _euler_config(**changes):
 def test_document_sections_are_model_specific_and_paper_friendly(tmp_path):
     fixed = derive(ModelConfig(
         rod="extensible_euler_bernoulli", parameterization="pcs", segments=1,
+        dynamics=DynamicsConfig("symbolic_lagrange"),
         inertia="lumped", integration=IntegrationConfig()
     ))
     first = tmp_path / "first"
@@ -152,6 +155,9 @@ rod = "euler_bernoulli"
 parameterization = "ritz"
 segments = 1
 
+[dynamics]
+formulation = "symbolic_lagrange"
+
 [integration]
 method = "analytic"
 
@@ -209,6 +215,7 @@ def test_reference_documents_compile_with_pdflatex(source, tmp_path):
 def test_cosserat_document_describes_pcs_and_lumped_inertia(tmp_path):
     plant = derive(ModelConfig(
         rod="cosserat", parameterization="pcs", segments=1, inertia="lumped",
+        dynamics=DynamicsConfig("symbolic_lagrange"),
         integration=IntegrationConfig(),
     ))
     generate_latex_document(plant, tmp_path)

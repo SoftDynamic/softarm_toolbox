@@ -71,3 +71,6 @@ friction = 0.30
 friction_velocity = 0.01
 stabilization_frequency = 20.0
 stabilization_ratio = 1.0
+
+[dynamics]
+formulation = "symbolic_lagrange"

@@ -53,3 +53,6 @@ angle = 1.5707963267948966
 section = 2
 radius = 0.0300
 angle = 1.5707963267948966
+
+[dynamics]
+formulation = "symbolic_lagrange"

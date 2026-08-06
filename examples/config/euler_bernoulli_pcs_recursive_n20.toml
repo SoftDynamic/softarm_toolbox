@@ -1,0 +1,55 @@
+[model]
+rod = "euler_bernoulli"
+parameterization = "pcs"
+segments = 20
+inertia = "lumped"
+
+[dynamics]
+formulation = "recursive"
+
+[integration]
+method = "analytic"
+
+[parameters]
+gravity = 9.81
+length = 0.05
+mass = 0.02
+Ixx = 0.00002
+Iyy = 0.00002
+Izz = 0.000002
+EI_x = 0.12
+EI_y = 0.12
+d_bx = 0.005
+d_by = 0.005
+tip_mass = 0.05
+tip_Ixx = 0.001
+tip_Iyy = 0.001
+tip_Izz = 0.0002
+
+[actuation]
+family = "tendon"
+acceleration = "none"
+
+[[actuation.channels]]
+name = "t1"
+kind = "unilateral"
+[[actuation.channels.spans]]
+section = 1
+radius = 0.0275
+angle = 0.0
+
+[[actuation.channels]]
+name = "t2"
+kind = "unilateral"
+[[actuation.channels.spans]]
+section = 1
+radius = 0.0275
+angle = 2.0943951023931953
+
+[[actuation.channels]]
+name = "t3"
+kind = "unilateral"
+[[actuation.channels.spans]]
+section = 1
+radius = 0.0275
+angle = 4.1887902047863905

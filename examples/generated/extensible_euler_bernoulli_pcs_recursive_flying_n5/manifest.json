@@ -1,0 +1,360 @@
+{
+  "model": {
+    "rod": "extensible_euler_bernoulli",
+    "parameterization": "pcs",
+    "segments": 5,
+    "base_mode": "floating_rpy",
+    "mount_xyz": [
+      0.0,
+      0.0,
+      0.08
+    ],
+    "mount_rpy": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "centerline": true,
+    "dynamics_formulation": "recursive"
+  },
+  "coordinates": {
+    "base": [
+      "base_x",
+      "base_y",
+      "base_z",
+      "base_roll",
+      "base_pitch",
+      "base_yaw"
+    ],
+    "arm": [
+      "bx1",
+      "by1",
+      "l1",
+      "bx2",
+      "by2",
+      "l2",
+      "bx3",
+      "by3",
+      "l3",
+      "bx4",
+      "by4",
+      "l4",
+      "bx5",
+      "by5",
+      "l5"
+    ]
+  },
+  "parameters": [
+    {
+      "name": "s1_rest_length",
+      "default": 0.12
+    },
+    {
+      "name": "s2_rest_length",
+      "default": 0.12
+    },
+    {
+      "name": "s3_rest_length",
+      "default": 0.12
+    },
+    {
+      "name": "s4_rest_length",
+      "default": 0.12
+    },
+    {
+      "name": "s5_rest_length",
+      "default": 0.12
+    },
+    {
+      "name": "s1_mass",
+      "default": 0.04
+    },
+    {
+      "name": "s2_mass",
+      "default": 0.04
+    },
+    {
+      "name": "s3_mass",
+      "default": 0.04
+    },
+    {
+      "name": "s4_mass",
+      "default": 0.04
+    },
+    {
+      "name": "s5_mass",
+      "default": 0.04
+    },
+    {
+      "name": "s1_Ixx",
+      "default": 5e-05
+    },
+    {
+      "name": "s2_Ixx",
+      "default": 5e-05
+    },
+    {
+      "name": "s3_Ixx",
+      "default": 5e-05
+    },
+    {
+      "name": "s4_Ixx",
+      "default": 5e-05
+    },
+    {
+      "name": "s5_Ixx",
+      "default": 5e-05
+    },
+    {
+      "name": "s1_Iyy",
+      "default": 5e-05
+    },
+    {
+      "name": "s2_Iyy",
+      "default": 5e-05
+    },
+    {
+      "name": "s3_Iyy",
+      "default": 5e-05
+    },
+    {
+      "name": "s4_Iyy",
+      "default": 5e-05
+    },
+    {
+      "name": "s5_Iyy",
+      "default": 5e-05
+    },
+    {
+      "name": "s1_Izz",
+      "default": 5e-06
+    },
+    {
+      "name": "s2_Izz",
+      "default": 5e-06
+    },
+    {
+      "name": "s3_Izz",
+      "default": 5e-06
+    },
+    {
+      "name": "s4_Izz",
+      "default": 5e-06
+    },
+    {
+      "name": "s5_Izz",
+      "default": 5e-06
+    },
+    {
+      "name": "s1_k_bx",
+      "default": 0.25
+    },
+    {
+      "name": "s2_k_bx",
+      "default": 0.25
+    },
+    {
+      "name": "s3_k_bx",
+      "default": 0.25
+    },
+    {
+      "name": "s4_k_bx",
+      "default": 0.25
+    },
+    {
+      "name": "s5_k_bx",
+      "default": 0.25
+    },
+    {
+      "name": "s1_k_by",
+      "default": 0.25
+    },
+    {
+      "name": "s2_k_by",
+      "default": 0.25
+    },
+    {
+      "name": "s3_k_by",
+      "default": 0.25
+    },
+    {
+      "name": "s4_k_by",
+      "default": 0.25
+    },
+    {
+      "name": "s5_k_by",
+      "default": 0.25
+    },
+    {
+      "name": "s1_k_l",
+      "default": 80.0
+    },
+    {
+      "name": "s2_k_l",
+      "default": 80.0
+    },
+    {
+      "name": "s3_k_l",
+      "default": 80.0
+    },
+    {
+      "name": "s4_k_l",
+      "default": 80.0
+    },
+    {
+      "name": "s5_k_l",
+      "default": 80.0
+    },
+    {
+      "name": "s1_d_bx",
+      "default": 0.01
+    },
+    {
+      "name": "s2_d_bx",
+      "default": 0.01
+    },
+    {
+      "name": "s3_d_bx",
+      "default": 0.01
+    },
+    {
+      "name": "s4_d_bx",
+      "default": 0.01
+    },
+    {
+      "name": "s5_d_bx",
+      "default": 0.01
+    },
+    {
+      "name": "s1_d_by",
+      "default": 0.01
+    },
+    {
+      "name": "s2_d_by",
+      "default": 0.01
+    },
+    {
+      "name": "s3_d_by",
+      "default": 0.01
+    },
+    {
+      "name": "s4_d_by",
+      "default": 0.01
+    },
+    {
+      "name": "s5_d_by",
+      "default": 0.01
+    },
+    {
+      "name": "s1_d_l",
+      "default": 0.05
+    },
+    {
+      "name": "s2_d_l",
+      "default": 0.05
+    },
+    {
+      "name": "s3_d_l",
+      "default": 0.05
+    },
+    {
+      "name": "s4_d_l",
+      "default": 0.05
+    },
+    {
+      "name": "s5_d_l",
+      "default": 0.05
+    },
+    {
+      "name": "gravity",
+      "default": 9.81
+    },
+    {
+      "name": "tip_mass",
+      "default": 0.05
+    },
+    {
+      "name": "tip_Ixx",
+      "default": 0.001
+    },
+    {
+      "name": "tip_Iyy",
+      "default": 0.001
+    },
+    {
+      "name": "tip_Izz",
+      "default": 0.0002
+    },
+    {
+      "name": "vehicle_mass",
+      "default": 1.5
+    },
+    {
+      "name": "vehicle_Ixx",
+      "default": 0.03
+    },
+    {
+      "name": "vehicle_Iyy",
+      "default": 0.03
+    },
+    {
+      "name": "vehicle_Izz",
+      "default": 0.05
+    },
+    {
+      "name": "act_bend_x_s1_radius",
+      "default": 0.012
+    },
+    {
+      "name": "act_bend_x_s2_radius",
+      "default": 0.012
+    },
+    {
+      "name": "act_bend_x_s3_radius",
+      "default": 0.012
+    },
+    {
+      "name": "act_bend_x_s4_radius",
+      "default": 0.012
+    },
+    {
+      "name": "act_bend_x_s5_radius",
+      "default": 0.012
+    },
+    {
+      "name": "act_bend_y_s1_radius",
+      "default": 0.012
+    },
+    {
+      "name": "act_bend_y_s2_radius",
+      "default": 0.012
+    },
+    {
+      "name": "act_bend_y_s3_radius",
+      "default": 0.012
+    },
+    {
+      "name": "act_bend_y_s4_radius",
+      "default": 0.012
+    },
+    {
+      "name": "act_bend_y_s5_radius",
+      "default": 0.012
+    }
+  ],
+  "actuation": {
+    "family": "tendon",
+    "acceleration": "none",
+    "channels": [
+      {
+        "name": "bend_x",
+        "kind": "signed"
+      },
+      {
+        "name": "bend_y",
+        "kind": "signed"
+      }
+    ]
+  },
+  "constraint": null
+}

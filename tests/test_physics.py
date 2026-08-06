@@ -3,7 +3,7 @@ import math
 import numpy as np
 import sympy as sp
 
-from softarm.config import IntegrationConfig, ModelConfig
+from softarm.config import DynamicsConfig, IntegrationConfig, ModelConfig
 from softarm.derive import derive
 from softarm.special import LAMBDA_MODULES
 
@@ -57,6 +57,7 @@ def _pac_position(q, xi, length=0.5):
 def test_distributed_mass_matches_independent_numerical_quadrature():
     config = ModelConfig(
         rod="extensible_euler_bernoulli", parameterization="pcs", segments=1,
+        dynamics=DynamicsConfig("symbolic_lagrange"),
         inertia="distributed", integration=IntegrationConfig("gauss", 4),
         parameters={
             "mass": 1.0, "Ixx": 0.0, "Iyy": 0.0, "Izz": 0.0,
@@ -84,6 +85,7 @@ def test_distributed_mass_matches_independent_numerical_quadrature():
 def test_coriolis_term_satisfies_energy_identity():
     config = ModelConfig(
         rod="extensible_euler_bernoulli", parameterization="pcs", segments=1,
+        dynamics=DynamicsConfig("symbolic_lagrange"),
         inertia="lumped", integration=IntegrationConfig(),
     )
     plant = derive(config)
@@ -103,6 +105,7 @@ def test_coriolis_term_satisfies_energy_identity():
 def test_pac_distributed_mass_and_coriolis_energy_identity():
     distributed = derive(ModelConfig(
         rod="euler_bernoulli", parameterization="pac", segments=1,
+        dynamics=DynamicsConfig("symbolic_lagrange"),
         inertia="distributed", integration=IntegrationConfig("gauss", 6),
         parameters={
             "length": 0.5, "mass": 1.0,
@@ -131,6 +134,7 @@ def test_pac_distributed_mass_and_coriolis_energy_identity():
 
     lumped = derive(ModelConfig(
         rod="euler_bernoulli", parameterization="pac", segments=1,
+        dynamics=DynamicsConfig("symbolic_lagrange"),
         inertia="lumped", integration=IntegrationConfig(),
     ))
     dq = np.array([0.03, -0.02, 0.01])
@@ -150,6 +154,7 @@ def test_pac_distributed_mass_and_coriolis_energy_identity():
 def test_cosserat_distributed_mass_matches_independent_quadrature():
     config = ModelConfig(
         rod="cosserat", parameterization="pcs", segments=1, inertia="distributed",
+        dynamics=DynamicsConfig("symbolic_lagrange"),
         integration=IntegrationConfig("gauss", 4),
         parameters={
             "length": 0.5, "mass": 1.0,
