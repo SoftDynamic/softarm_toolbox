@@ -3,7 +3,17 @@
 from .actuation import ActuationModel, derive_actuation, register_actuator
 from .config import ActuationConfig, BaseConfig, ConstraintConfig, ModelConfig, load_config
 from .constraints import ConstraintModel, derive_constraint, register_constraint
-from .derive import SymbolicPlant, derive, register_model
+from .derive import derive, register_model
+from .dynamics import SymbolicLagrangeAssembler
+from .modeling import (
+    DynamicsAssembler,
+    ModelCoordinates,
+    ModelDefinition,
+    ModelDefinitionBuilder,
+    SectionKinematics,
+    SectionProperties,
+)
+from .models import PlantModel, RuntimeParameter, SymbolicPlant
 from .pipeline import BuildError, BuildOptions, DerivedSystem, build_bundle, derive_system
 
 __all__ = [
@@ -13,6 +23,15 @@ __all__ = [
     "ConstraintConfig",
     "ConstraintModel",
     "ModelConfig",
+    "PlantModel",
+    "SectionKinematics",
+    "ModelDefinitionBuilder",
+    "ModelDefinition",
+    "ModelCoordinates",
+    "SectionProperties",
+    "DynamicsAssembler",
+    "SymbolicLagrangeAssembler",
+    "RuntimeParameter",
     "SymbolicPlant",
     "BuildOptions",
     "BuildError",

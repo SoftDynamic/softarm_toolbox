@@ -7,80 +7,61 @@ from dataclasses import dataclass, replace
 import sympy as sp
 
 from .config import ConfigError, ModelConfig, _validate_ritz, broadcast
-from .dynamics import SympyBatchDifferentiator, assemble_bias
+from .dynamics import SymbolicLagrangeAssembler
 from .geometry import (
-    angular_jacobian,
     pac_transform,
     pcs_transform,
     polynomial,
     ritz_transform,
-    transform_rpy,
 )
-from .integration import integrate_unit, unit_gauss_rule
-
-
-@dataclass(frozen=True)
-class RuntimeParameter:
-    name: str
-    symbol: sp.Symbol
-    default: float
-
+from .integration import integrate_unit
+from .modeling import (
+    FunctionalSectionKinematics,
+    ModelCoordinates,
+    ModelDefinition,
+    ModelDefinitionBuilder,
+    SectionProperties,
+)
+from .models import RuntimeParameter, SymbolicPlant
 
 ModelBuilder = Callable[[ModelConfig], "SymbolicPlant"]
 ModelValidator = Callable[[ModelConfig], None]
 
 
 @dataclass(frozen=True)
-class RegisteredModel:
-    builder: ModelBuilder
+class _SymbolicDefinitionBuilder(ModelDefinitionBuilder):
+    definition_factory: Callable[[ModelConfig], ModelDefinition]
     validator: ModelValidator | None = None
 
+    def validate(self, config: ModelConfig) -> None:
+        if self.validator is not None:
+            self.validator(config)
 
-@dataclass
-class SymbolicPlant:
-    config: ModelConfig
-    q: sp.Matrix
-    dq: sp.Matrix
-    base_q: sp.Matrix
-    base_dq: sp.Matrix
-    arm_q: sp.Matrix
-    arm_dq: sp.Matrix
-    parameters: tuple[RuntimeParameter, ...]
-    mass: sp.Matrix
-    potential: sp.Expr
-    damping: sp.Matrix
-    kinematics: sp.Matrix
-    end_jacobian: sp.Matrix
-    base_transform: sp.Matrix
-    end_transform: sp.Matrix
-    base_jacobian: sp.Matrix
-    vehicle_wrench_map: sp.Matrix
-    arm_force_map: sp.Matrix
-    _material_coordinate: sp.Symbol | None = None
-    _material_kinematics: sp.Matrix | None = None
-    _bias: sp.Matrix | None = None
+    def define(self, config: ModelConfig) -> ModelDefinition:
+        return self.definition_factory(config)
 
-    @property
-    def p(self) -> sp.Matrix:
-        return sp.Matrix([item.symbol for item in self.parameters])
 
-    @property
-    def coordinate_names(self) -> list[str]:
-        return [str(item) for item in self.q]
+@dataclass(frozen=True)
+class _LegacyPlantBuilder(ModelDefinitionBuilder):
+    """Compatibility adapter for the established register_model API."""
 
-    @property
-    def base_coordinate_names(self) -> list[str]:
-        return [str(item) for item in self.base_q]
+    plant_factory: ModelBuilder
+    validator: ModelValidator | None = None
 
-    @property
-    def arm_coordinate_names(self) -> list[str]:
-        return [str(item) for item in self.arm_q]
+    def validate(self, config: ModelConfig) -> None:
+        if self.validator is not None:
+            self.validator(config)
 
-    @property
-    def bias(self) -> sp.Matrix:
-        if self._bias is None:
-            self._bias = assemble_bias(self, SympyBatchDifferentiator())
-        return self._bias
+    def define(self, config: ModelConfig) -> ModelDefinition:
+        raise NotImplementedError("legacy plant builders do not expose a model definition")
+
+    def build(
+        self,
+        config: ModelConfig,
+        assembler: SymbolicLagrangeAssembler,
+    ) -> SymbolicPlant:
+        self.validate(config)
+        return self.plant_factory(config)
 
 
 class _ParameterBuilder:
@@ -103,6 +84,33 @@ class _ParameterBuilder:
             self.items.append(RuntimeParameter(item_name, symbol, value))
             result.append(symbol)
         return result
+
+
+def _model_definition(
+    config: ModelConfig,
+    q: sp.Matrix,
+    dq: sp.Matrix,
+    parameters: _ParameterBuilder,
+    local_transform: Callable[[int, sp.Expr], sp.Matrix],
+    lengths: list[sp.Symbol],
+    masses: list[sp.Symbol],
+    inertias: list[sp.Matrix],
+    damping: list[sp.Expr] | sp.Matrix,
+    elastic: sp.Expr,
+    distributed: bool,
+    linear_kinematics: bool = False,
+) -> ModelDefinition:
+    return ModelDefinition(
+        config=config,
+        coordinates=ModelCoordinates(q, dq),
+        parameters=tuple(parameters.items),
+        kinematics=FunctionalSectionKinematics(local_transform),
+        sections=SectionProperties(tuple(lengths), tuple(masses), tuple(inertias)),
+        damping=tuple(damping) if isinstance(damping, list) else damping,
+        elastic=elastic,
+        distributed=distributed,
+        linear_kinematics=linear_kinematics,
+    )
 
 
 def _arm_coordinates(
@@ -134,229 +142,6 @@ def _pac_arm_coordinates(
     )
 
 
-def _base_coordinates(config: ModelConfig) -> tuple[sp.Matrix, sp.Matrix]:
-    if config.base.mode == "fixed":
-        return sp.zeros(0, 1), sp.zeros(0, 1)
-    q = sp.Matrix(sp.symbols("base_x base_y base_z base_roll base_pitch base_yaw", real=True))
-    dq = sp.Matrix(sp.symbols(
-        "dbase_x dbase_y dbase_z dbase_roll dbase_pitch dbase_yaw", real=True
-    ))
-    return q, dq
-
-
-def _linearize_matrix(matrix: sp.Matrix, q: sp.Matrix) -> sp.Matrix:
-    zero = {coordinate: 0 for coordinate in q}
-    return matrix.applyfunc(
-        lambda value: value.subs(zero)
-        + sum(
-            sp.diff(value, coordinate).subs(zero) * coordinate
-            for coordinate in q
-        )
-    )
-
-
-def _mixed_linear_angular_jacobian(
-    rotation: sp.Matrix,
-    q: sp.Matrix,
-    linear_coordinates: sp.Matrix,
-) -> sp.Matrix:
-    """Spatial angular Jacobian exact in the base attitude and first order in arm shape."""
-    zero = {coordinate: 0 for coordinate in linear_coordinates}
-    reference_rotation = rotation.subs(zero)
-    columns = []
-    for coordinate in q:
-        rate = rotation.diff(coordinate).subs(zero) * reference_rotation.T
-        skew = (rate - rate.T) / 2
-        columns.append(sp.Matrix([skew[2, 1], skew[0, 2], skew[1, 0]]))
-    return sp.Matrix.hstack(*columns)
-
-
-def _point_terms(
-    H: sp.Matrix,
-    q: sp.Matrix,
-    mass: sp.Expr,
-    inertia: sp.Matrix,
-    linear_rotation: bool = False,
-    linear_coordinates: sp.Matrix | None = None,
-) -> tuple[sp.Matrix, sp.Expr]:
-    position = H[:3, 3]
-    rotation = H[:3, :3]
-    jv = position.jacobian(q)
-    if linear_rotation:
-        selected_coordinates = linear_coordinates if linear_coordinates is not None else q
-        jw = _mixed_linear_angular_jacobian(
-            rotation, q, selected_coordinates
-        )
-        zero = {coordinate: 0 for coordinate in selected_coordinates}
-        rotation_for_inertia = rotation.subs(zero)
-    else:
-        jw = angular_jacobian(rotation, q)
-        rotation_for_inertia = rotation
-    mass_term = mass * (jv.T * jv) + jw.T * (rotation_for_inertia * inertia * rotation_for_inertia.T) * jw
-    return mass_term, position[2]
-
-
-def _derive_common(
-    config: ModelConfig,
-    q: sp.Matrix,
-    dq: sp.Matrix,
-    parameters: _ParameterBuilder,
-    local_transform: Callable[[int, sp.Expr], sp.Matrix],
-    lengths: list[sp.Symbol],
-    masses: list[sp.Symbol],
-    inertias: list[sp.Matrix],
-    damping: list[sp.Expr] | sp.Matrix,
-    elastic: sp.Expr,
-    distributed: bool,
-    linear_kinematics: bool = False,
-) -> SymbolicPlant:
-    gravity = parameters.global_value("gravity", 9.81)
-    tip_mass = parameters.global_value("tip_mass", 0.1)
-    tip_ixx = parameters.global_value("tip_Ixx", 0.01)
-    tip_iyy = parameters.global_value("tip_Iyy", 0.01)
-    tip_izz = parameters.global_value("tip_Izz", 0.01)
-
-    base_q, base_dq = _base_coordinates(config)
-    arm_q, arm_dq = q, dq
-    q = base_q.col_join(arm_q)
-    dq = base_dq.col_join(arm_dq)
-    nq = len(q)
-    mass_matrix = sp.zeros(nq)
-    potential = elastic
-    if config.base.mode == "floating_rpy":
-        vehicle_mass = parameters.global_value("vehicle_mass", 1.5)
-        vehicle_ixx = parameters.global_value("vehicle_Ixx", 0.03)
-        vehicle_iyy = parameters.global_value("vehicle_Iyy", 0.03)
-        vehicle_izz = parameters.global_value("vehicle_Izz", 0.05)
-        base_transform = transform_rpy(base_q[:3, 0], tuple(base_q[3:6, 0]))
-        vehicle_inertia = sp.diag(vehicle_ixx, vehicle_iyy, vehicle_izz)
-        vehicle_term, vehicle_height = _point_terms(
-            base_transform, q, vehicle_mass, vehicle_inertia,
-        )
-        mass_matrix += vehicle_term
-        potential -= vehicle_mass * gravity * vehicle_height
-    else:
-        base_transform = sp.eye(4)
-
-    mount = transform_rpy(
-        tuple(sp.Float(str(value)) for value in config.base.mount_xyz),
-        tuple(sp.Float(str(value)) for value in config.base.mount_rpy),
-    )
-    base = base_transform * mount
-    transforms: list[sp.Matrix] = []
-    material_transforms: list[sp.Matrix] = []
-    xi = sp.Symbol("xi", real=True, nonnegative=True)
-
-    for section in range(config.segments):
-        local_end = local_transform(section, sp.S.One)
-        end = base * local_end
-        if linear_kinematics:
-            end = _linearize_matrix(end, arm_q)
-        transforms.append(end)
-
-        material_transform = base * local_transform(section, xi)
-        if linear_kinematics:
-            material_transform = _linearize_matrix(material_transform, arm_q)
-        material_transforms.append(material_transform)
-
-        if distributed:
-            if config.integration.method == "gauss":
-                for node, weight in unit_gauss_rule(config.integration):
-                    material = base * local_transform(section, node)
-                    if linear_kinematics:
-                        material = _linearize_matrix(
-                            material, arm_q
-                        )
-                    point_mass, height = _point_terms(
-                        material, q, masses[section], inertias[section],
-                        linear_kinematics,
-                        arm_q if linear_kinematics else None,
-                    )
-                    mass_matrix += weight * point_mass
-                    potential -= (
-                        masses[section] * gravity * weight * height
-                    )
-            else:
-                material = base * local_transform(section, xi)
-                if linear_kinematics:
-                    material = _linearize_matrix(
-                        material, arm_q
-                    )
-                point_mass, height = _point_terms(
-                    material, q, masses[section], inertias[section],
-                    linear_kinematics,
-                    arm_q if linear_kinematics else None,
-                )
-                mass_matrix += integrate_unit(
-                    point_mass, xi, config.integration,
-                    f"section {section + 1} inertia"
-                )
-                potential -= masses[section] * gravity * integrate_unit(
-                    height, xi, config.integration,
-                    f"section {section + 1} gravity"
-                )
-        else:
-            midpoint = base * local_transform(section, sp.Rational(1, 2))
-            if linear_kinematics:
-                midpoint = _linearize_matrix(midpoint, arm_q)
-            point_mass, height = _point_terms(
-                midpoint, q, masses[section], inertias[section],
-                linear_kinematics, arm_q if linear_kinematics else None,
-            )
-            mass_matrix += point_mass
-            potential -= masses[section] * gravity * height
-        base = end
-
-    end_position = base[:3, 3]
-    end_rotation = base[:3, :3]
-    jv_end = end_position.jacobian(q)
-    jw_end = (
-        _mixed_linear_angular_jacobian(
-            end_rotation, q, arm_q
-        )
-        if linear_kinematics else angular_jacobian(end_rotation, q)
-    )
-    tip_inertia = sp.diag(tip_ixx, tip_iyy, tip_izz)
-    if linear_kinematics:
-        zero = {coordinate: 0 for coordinate in arm_q}
-        tip_rotation = end_rotation.subs(zero)
-    else:
-        tip_rotation = end_rotation
-    mass_matrix += tip_mass * (jv_end.T * jv_end) + jw_end.T * (tip_rotation * tip_inertia * tip_rotation.T) * jw_end
-    potential -= tip_mass * gravity * end_position[2]
-
-    kinematics = sp.Matrix.hstack(*transforms)
-    material_kinematics = sp.Matrix.hstack(*material_transforms)
-    end_jacobian = jv_end.col_join(jw_end)
-    base_position = base_transform[:3, 3]
-    base_rotation = base_transform[:3, :3]
-    if len(base_q):
-        base_jv = base_position.jacobian(q)
-        base_jw = angular_jacobian(base_rotation, q)
-        base_jacobian = base_jv.col_join(base_jw)
-        wrench_rotation = sp.diag(base_rotation, base_rotation)
-        vehicle_wrench_map = base_jacobian.T * wrench_rotation
-    else:
-        base_jacobian = sp.zeros(6, nq)
-        vehicle_wrench_map = sp.zeros(nq, 6)
-    arm_force_map = sp.zeros(nq, len(arm_q))
-    if len(arm_q):
-        arm_force_map[len(base_q):, :] = sp.eye(len(arm_q))
-    full_damping = sp.zeros(nq)
-    arm_damping = sp.diag(*damping) if isinstance(damping, list) else damping
-    if arm_damping.shape != (len(arm_q), len(arm_q)):
-        raise ValueError("arm damping matrix has inconsistent dimensions")
-    if len(arm_q):
-        full_damping[len(base_q):, len(base_q):] = arm_damping
-    return SymbolicPlant(
-        config, q, dq, base_q, base_dq, arm_q, arm_dq,
-        tuple(parameters.items), mass_matrix, potential, full_damping,
-        kinematics, end_jacobian, base_transform, base, base_jacobian,
-        vehicle_wrench_map, arm_force_map,
-        _material_coordinate=xi, _material_kinematics=material_kinematics,
-    )
-
-
 def _euler_bernoulli_pcs_strains(
     bx: sp.Expr,
     by: sp.Expr,
@@ -369,7 +154,7 @@ def _euler_bernoulli_pcs_strains(
     )
 
 
-def _derive_extensible_euler_bernoulli_pcs(config: ModelConfig) -> SymbolicPlant:
+def _define_extensible_euler_bernoulli_pcs(config: ModelConfig) -> ModelDefinition:
     q, dq = _arm_coordinates(config, ("bx", "by", "l"))
     pb = _ParameterBuilder(config)
     lengths = pb.sections("rest_length", 0.5)
@@ -402,13 +187,13 @@ def _derive_extensible_euler_bernoulli_pcs(config: ModelConfig) -> SymbolicPlant
             + kl[section] * (q[offset + 2] - lengths[section]) ** 2
         )
         damping.extend([dbx[section], dby[section], dl[section]])
-    return _derive_common(
+    return _model_definition(
         config, q, dq, pb, local, lengths, masses, inertias, damping,
         elastic, config.inertia == "distributed"
     )
 
 
-def _derive_euler_bernoulli_ritz(config: ModelConfig) -> SymbolicPlant:
+def _define_euler_bernoulli_ritz(config: ModelConfig) -> ModelDefinition:
     q, dq = _arm_coordinates(config, ("ax", "ay"))
     pb = _ParameterBuilder(config)
     lengths = pb.sections("length", 0.5)
@@ -455,13 +240,13 @@ def _derive_euler_bernoulli_ritz(config: ModelConfig) -> SymbolicPlant:
             + eix[section] * q[offset + 1] ** 2 * integral_y / lengths[section] ** 3
         )
         damping.extend([dax[section], day[section]])
-    return _derive_common(
+    return _model_definition(
         config, q, dq, pb, local, lengths, masses, inertias, damping,
         elastic, True, True
     )
 
 
-def _derive_euler_bernoulli_pcs(config: ModelConfig) -> SymbolicPlant:
+def _define_euler_bernoulli_pcs(config: ModelConfig) -> ModelDefinition:
     q, dq = _arm_coordinates(config, ("bx", "by"))
     pb = _ParameterBuilder(config)
     lengths = pb.sections("length", 0.5)
@@ -491,13 +276,13 @@ def _derive_euler_bernoulli_pcs(config: ModelConfig) -> SymbolicPlant:
             + eix[section] * q[offset + 1] ** 2 / lengths[section]
         )
         damping.extend([dbx[section], dby[section]])
-    return _derive_common(
+    return _model_definition(
         config, q, dq, pb, local, lengths, masses, inertias, damping,
         elastic, config.inertia == "distributed",
     )
 
 
-def _derive_extensible_euler_bernoulli_ritz(config: ModelConfig) -> SymbolicPlant:
+def _define_extensible_euler_bernoulli_ritz(config: ModelConfig) -> ModelDefinition:
     q, dq = _arm_coordinates(config, ("ax", "ay", "az"))
     pb = _ParameterBuilder(config)
     lengths = pb.sections("rest_length", 0.5)
@@ -553,7 +338,7 @@ def _derive_extensible_euler_bernoulli_ritz(config: ModelConfig) -> SymbolicPlan
             + ea[section] * q[offset + 2] ** 2 * integral_z / lengths[section]
         )
         damping.extend([dax[section], day[section], daz[section]])
-    return _derive_common(
+    return _model_definition(
         config, q, dq, pb, local, lengths, masses, inertias, damping,
         elastic, True, True,
     )
@@ -566,7 +351,7 @@ def _pac_hankel() -> sp.Matrix:
     ])
 
 
-def _derive_euler_bernoulli_pac(config: ModelConfig) -> SymbolicPlant:
+def _define_euler_bernoulli_pac(config: ModelConfig) -> ModelDefinition:
     q, dq = _pac_arm_coordinates(config, extensible=False)
     pb = _ParameterBuilder(config)
     lengths = pb.sections("length", 0.5)
@@ -609,13 +394,13 @@ def _derive_euler_bernoulli_pac(config: ModelConfig) -> SymbolicPlant:
         )
         damping[offset:offset + 2, offset:offset + 2] = directional_damping * hankel
         damping[offset + 2, offset + 2] = dphi[section]
-    return _derive_common(
+    return _model_definition(
         config, q, dq, pb, local, lengths, masses, inertias, damping,
         elastic, config.inertia == "distributed",
     )
 
 
-def _derive_extensible_euler_bernoulli_pac(config: ModelConfig) -> SymbolicPlant:
+def _define_extensible_euler_bernoulli_pac(config: ModelConfig) -> ModelDefinition:
     q, dq = _pac_arm_coordinates(config, extensible=True)
     pb = _ParameterBuilder(config)
     lengths = pb.sections("rest_length", 0.5)
@@ -664,13 +449,13 @@ def _derive_extensible_euler_bernoulli_pac(config: ModelConfig) -> SymbolicPlant
         damping[offset:offset + 2, offset:offset + 2] = directional_damping * hankel
         damping[offset + 2, offset + 2] = dphi[section]
         damping[offset + 3, offset + 3] = dl[section]
-    return _derive_common(
+    return _model_definition(
         config, q, dq, pb, local, lengths, masses, inertias, damping,
         elastic, config.inertia == "distributed",
     )
 
 
-def _derive_cosserat_pcs(config: ModelConfig) -> SymbolicPlant:
+def _define_cosserat_pcs(config: ModelConfig) -> ModelDefinition:
     q, dq = _arm_coordinates(config, ("kx", "ky", "kz", "vx", "vy", "vz"))
     pb = _ParameterBuilder(config)
     lengths = pb.sections("length", 0.5)
@@ -732,7 +517,7 @@ def _derive_cosserat_pcs(config: ModelConfig) -> SymbolicPlant:
             lengths[section] * dvy[section],
             lengths[section] * dvz[section],
         ])
-    return _derive_common(
+    return _model_definition(
         config, q, dq, pb, local, lengths, masses, inertias, damping, elastic,
         config.inertia == "distributed",
     )
@@ -806,28 +591,28 @@ def _validate_pac(config: ModelConfig) -> None:
 _CACHE: dict[str, SymbolicPlant] = {}
 
 
-_MODELS: dict[tuple[str, str], RegisteredModel] = {
-    ("euler_bernoulli", "ritz"): RegisteredModel(
-        _derive_euler_bernoulli_ritz, _validate_euler_bernoulli_ritz
+_MODELS: dict[tuple[str, str], ModelDefinitionBuilder] = {
+    ("euler_bernoulli", "ritz"): _SymbolicDefinitionBuilder(
+        _define_euler_bernoulli_ritz, _validate_euler_bernoulli_ritz
     ),
-    ("euler_bernoulli", "pcs"): RegisteredModel(
-        _derive_euler_bernoulli_pcs, _validate_pcs_inertia
+    ("euler_bernoulli", "pcs"): _SymbolicDefinitionBuilder(
+        _define_euler_bernoulli_pcs, _validate_pcs_inertia
     ),
-    ("extensible_euler_bernoulli", "ritz"): RegisteredModel(
-        _derive_extensible_euler_bernoulli_ritz,
+    ("extensible_euler_bernoulli", "ritz"): _SymbolicDefinitionBuilder(
+        _define_extensible_euler_bernoulli_ritz,
         _validate_extensible_euler_bernoulli_ritz,
     ),
-    ("extensible_euler_bernoulli", "pcs"): RegisteredModel(
-        _derive_extensible_euler_bernoulli_pcs, _validate_pcs_inertia
+    ("extensible_euler_bernoulli", "pcs"): _SymbolicDefinitionBuilder(
+        _define_extensible_euler_bernoulli_pcs, _validate_pcs_inertia
     ),
-    ("euler_bernoulli", "pac"): RegisteredModel(
-        _derive_euler_bernoulli_pac, _validate_pac
+    ("euler_bernoulli", "pac"): _SymbolicDefinitionBuilder(
+        _define_euler_bernoulli_pac, _validate_pac
     ),
-    ("extensible_euler_bernoulli", "pac"): RegisteredModel(
-        _derive_extensible_euler_bernoulli_pac, _validate_pac
+    ("extensible_euler_bernoulli", "pac"): _SymbolicDefinitionBuilder(
+        _define_extensible_euler_bernoulli_pac, _validate_pac
     ),
-    ("cosserat", "pcs"): RegisteredModel(
-        _derive_cosserat_pcs, _validate_cosserat_pcs
+    ("cosserat", "pcs"): _SymbolicDefinitionBuilder(
+        _define_cosserat_pcs, _validate_cosserat_pcs
     ),
 }
 
@@ -835,7 +620,7 @@ _MODELS: dict[tuple[str, str], RegisteredModel] = {
 def register_model(
     rod: str,
     parameterization: str,
-    builder: ModelBuilder,
+    builder: ModelBuilder | ModelDefinitionBuilder,
     *,
     validator: ModelValidator | None = None,
 ) -> None:
@@ -843,17 +628,22 @@ def register_model(
     key = (rod, parameterization)
     if not rod or not parameterization or key in _MODELS:
         raise ValueError(f"model combination {key!r} is already registered or invalid")
-    _MODELS[key] = RegisteredModel(builder, validator)
+    if isinstance(builder, ModelDefinitionBuilder):
+        if validator is not None:
+            raise ValueError(
+                "a ModelDefinitionBuilder owns its validation; do not pass validator"
+            )
+        _MODELS[key] = builder
+    else:
+        _MODELS[key] = _LegacyPlantBuilder(builder, validator)
 
 
 def derive(config: ModelConfig) -> SymbolicPlant:
     combination = (config.rod, config.parameterization)
     try:
-        registered = _MODELS[combination]
+        builder = _MODELS[combination]
     except KeyError as error:
         raise ValueError(f"unregistered model combination: {combination!r}") from error
-    if registered.validator is not None:
-        registered.validator(config)
     key = json.dumps({
         "rod": config.rod,
         "parameterization": config.parameterization,
@@ -867,7 +657,10 @@ def derive(config: ModelConfig) -> SymbolicPlant:
         "base": [config.base.mode, config.base.mount_xyz, config.base.mount_rpy],
     }, sort_keys=True)
     if key not in _CACHE:
-        _CACHE[key] = registered.builder(config)
+        plant = builder.build(config, SymbolicLagrangeAssembler())
+        if not isinstance(plant, SymbolicPlant):
+            raise TypeError("registered model builder did not return SymbolicPlant")
+        _CACHE[key] = plant
     # Actuation is deliberately not part of the expensive physical-model cache,
     # but callers must retain the actuation attached to their own configuration.
     return replace(_CACHE[key], config=config, _bias=None)

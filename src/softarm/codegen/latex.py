@@ -9,8 +9,8 @@ from sympy.printing.latex import LatexPrinter
 
 from ..actuation import ActuationModel
 from ..constraints import ConstraintModel
-from ..derive import RuntimeParameter, SymbolicPlant
 from ..geometry import polynomial, ritz_transform, transform_rpy
+from ..models import RuntimeParameter, SymbolicPlant
 from .optimization import FunctionOptimizer
 
 

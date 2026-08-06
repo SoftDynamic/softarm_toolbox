@@ -12,7 +12,7 @@ from .codegen.optimization import FunctionOptimizer, RenderedFunction
 from .config import ModelConfig
 
 if TYPE_CHECKING:
-    from .derive import SymbolicPlant
+    from .models import SymbolicPlant
     from .pipeline import BuildOptions, DerivedSystem
 
 

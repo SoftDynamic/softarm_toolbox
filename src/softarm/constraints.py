@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import sympy as sp
 
 from .config import ConstraintConfig
-from .derive import RuntimeParameter, SymbolicPlant
+from .models import PlantModel, RuntimeParameter
 
 
 @dataclass(frozen=True)
@@ -42,11 +42,11 @@ class ConstraintModel:
         )
 
 
-ConstraintBuilder = Callable[[SymbolicPlant, ConstraintConfig], ConstraintModel]
+ConstraintBuilder = Callable[[PlantModel, ConstraintConfig], ConstraintModel]
 
 
 def _plane_point_contact_builder(
-    plant: SymbolicPlant,
+    plant: PlantModel,
     config: ConstraintConfig,
 ) -> ConstraintModel:
     data = config.data
@@ -120,7 +120,7 @@ def register_constraint(name: str, builder: ConstraintBuilder) -> None:
 
 
 def derive_constraint(
-    plant: SymbolicPlant,
+    plant: PlantModel,
     config: ConstraintConfig | None = None,
 ) -> ConstraintModel | None:
     selected = config if config is not None else plant.config.constraint

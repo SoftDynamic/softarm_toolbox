@@ -1,7 +1,17 @@
 from __future__ import annotations
 
 import ast
+import inspect
 from pathlib import Path
+
+from softarm import (
+    DynamicsAssembler,
+    ModelDefinitionBuilder,
+    PlantModel,
+    SectionKinematics,
+    SymbolicLagrangeAssembler,
+    SymbolicPlant,
+)
 
 ROOT = Path(__file__).parents[1]
 DOMAIN_MODULES = (
@@ -11,8 +21,19 @@ DOMAIN_MODULES = (
     "dynamics.py",
     "geometry.py",
     "integration.py",
+    "modeling.py",
+    "models.py",
     "special.py",
 )
+
+
+def test_modeling_interfaces_are_abstract_and_symbolic_plant_implements_them():
+    assert inspect.isabstract(PlantModel)
+    assert inspect.isabstract(SectionKinematics)
+    assert inspect.isabstract(ModelDefinitionBuilder)
+    assert inspect.isabstract(DynamicsAssembler)
+    assert issubclass(SymbolicPlant, PlantModel)
+    assert issubclass(SymbolicLagrangeAssembler, DynamicsAssembler)
 
 
 def test_model_domain_does_not_import_infrastructure():

@@ -6,8 +6,8 @@ from dataclasses import dataclass
 import sympy as sp
 
 from .config import ActuationConfig
-from .derive import RuntimeParameter, SymbolicPlant
 from .geometry import polynomial
+from .models import PlantModel, RuntimeParameter
 
 
 @dataclass(frozen=True)
@@ -39,15 +39,15 @@ class ActuationModel:
                    for index, kind in enumerate(self.channel_kinds))
 
 
-ActuatorBuilder = Callable[[SymbolicPlant, ActuationConfig], ActuationModel]
+ActuatorBuilder = Callable[[PlantModel, ActuationConfig], ActuationModel]
 
 
-def _parameter_by_name(plant: SymbolicPlant) -> dict[str, sp.Symbol]:
+def _parameter_by_name(plant: PlantModel) -> dict[str, sp.Symbol]:
     return {item.name: item.symbol for item in plant.parameters}
 
 
 def _tendon_builder(
-    plant: SymbolicPlant,
+    plant: PlantModel,
     config: ActuationConfig,
 ) -> ActuationModel:
     if not config.channels:
@@ -182,7 +182,7 @@ def register_actuator(name: str, builder: ActuatorBuilder) -> None:
     _ACTUATOR_BUILDERS[name] = builder
 
 
-def _validate_strict_rank(plant: SymbolicPlant, actuation: ActuationModel) -> None:
+def _validate_strict_rank(plant: PlantModel, actuation: ActuationModel) -> None:
     if actuation.acceleration != "strict":
         return
     if actuation.count > len(plant.arm_q):
@@ -216,7 +216,7 @@ def _validate_strict_rank(plant: SymbolicPlant, actuation: ActuationModel) -> No
 
 
 def derive_actuation(
-    plant: SymbolicPlant,
+    plant: PlantModel,
     config: ActuationConfig | None = None,
 ) -> ActuationModel | None:
     """Derive an optional actuator model without changing the base plant."""

@@ -13,9 +13,10 @@ from .codegen.matlab import generate_matlab_bundle
 from .codegen.optimization import FunctionOptimizer, SympyCse
 from .config import ModelConfig
 from .constraints import ConstraintModel, derive_constraint
-from .derive import SymbolicPlant, derive
+from .derive import derive
 from .diagnostics import BuildDiagnostics
 from .dynamics import SympyBatchDifferentiator, assemble_bias
+from .models import SymbolicPlant
 
 
 @dataclass(frozen=True)

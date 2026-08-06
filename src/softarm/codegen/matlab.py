@@ -9,7 +9,7 @@ from sympy.printing.octave import OctaveCodePrinter
 
 from ..actuation import ActuationModel
 from ..constraints import ConstraintModel
-from ..derive import SymbolicPlant
+from ..models import SymbolicPlant
 from .optimization import FunctionOptimizer
 
 

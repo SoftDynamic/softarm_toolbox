@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..actuation import ActuationModel
-from ..derive import SymbolicPlant
+from ..models import SymbolicPlant
 from .matlab import render_function, symbol_loads
 from .optimization import FunctionOptimizer
 
