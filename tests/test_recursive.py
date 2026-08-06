@@ -80,7 +80,7 @@ def test_twenty_section_bundle_reuses_one_local_template(tmp_path):
 @pytest.mark.parametrize(
     ("name", "segments", "base_mode", "actuator_count"),
     [
-        ("euler_bernoulli_pcs_recursive_n20", 20, "fixed", 0),
+        ("euler_bernoulli_pcs_recursive_n20", 20, "fixed", 3),
         ("extensible_euler_bernoulli_pcs_recursive_flying_n5", 5, "floating_rpy", 2),
     ],
 )

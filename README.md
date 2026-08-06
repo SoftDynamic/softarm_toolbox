@@ -45,6 +45,10 @@ $\varepsilon_z$ 为轴向应变。该列表示各梁理论保留的应变分量�
 基座刚体、安装变换、软臂和末端负载统一装配到质量矩阵与偏置项中，
 从而保留基座—软臂动力学耦合。
 
+上述基座能力完整适用于 `symbolic_lagrange`。选择 `recursive` 时，PCS、PAC 和
+Cosserat PCS 同时支持固定与浮动基座；现有一阶 displacement-Ritz 递推适配器
+目前只支持固定基座。工具箱尚未实现 strain-Ritz。
+
 ### 1.2 功能范围
 
 - Euler–Bernoulli、Extensible Euler–Bernoulli 与 Cosserat rod 建模
@@ -52,7 +56,7 @@ $\varepsilon_z$ 为轴向应变。该列表示各梁理论保留的应变分量�
 - 固定基座与浮动基座联合动力学
 - 解析积分与 Gauss–Legendre 积分
 - 通用跨段绳索驱动与严格绳长加速度约束
-- 平面单点接触、摩擦反力和稳定化
+- `symbolic_lagrange` 下的平面单点接触、摩擦反力和稳定化
 - MATLAB 数值函数、Simulink Model Reference 和 LaTeX 数学手册生成
 - 数值线性化与关键节点姿态回放
 
@@ -234,13 +238,13 @@ uv run --locked --extra wolfram softarm build \
 | `[ritz]` | Ritz 参数化的归一化多项式 |
 | `[parameters]` | 几何、惯性、弹性、阻尼和载荷参数 |
 | `[actuation]` | 执行器族、通道及加速度模式 |
-| `[constraint]` | 接触或其他加速度级约束 |
+| `[constraint]` | 约束（实验性功能） |
 
 每个配置都必须显式选择动力学装配方法，不提供默认值。`symbolic_lagrange`
-保留全局 SymPy 欧拉–拉格朗日推导；`recursive` 生成逐段局部核，并在 MATLAB
+保留全局符号欧拉–拉格朗日推导；`recursive` 生成逐段局部核，并在 MATLAB
 运行时执行前向运动传播和反向力旋量回拉。递推模式不接受 Wolfram 后端选项或
-符号 TeX appendix；现有 displacement-Ritz 由保持一阶小挠度语义的 affine
-递推核处理，并未引入 strain-Ritz。
+符号 TeX appendix，也暂不支持 `[constraint]`。现有 displacement-Ritz 由保持
+一阶小挠度语义的 affine 递推核处理，并要求 `base.mode = "fixed"`。
 
 两个可直接构建的递推示例分别覆盖固定基座多段模型，以及浮动基座、轴向伸缩和
 跨段 tendon 通道：
@@ -386,7 +390,7 @@ angle = 0.0
 通道数不超过软臂坐标数的配置。`acceleration = "none"` 生成力映射，
 适用于超驱动或相关通道组。
 
-### 3.4 平面单点接触
+### 3.4 平面单点接触约束（实验性功能）
 
 ```toml
 [constraint]
@@ -434,13 +438,15 @@ softarm_state_rhs(x,tau_arm,w_vehicle,w_tip,p)
 `manifest.model.centerline` 为 `true` 的模型还提供
 `softarm_centerline(q,p,xi)`，用于按归一化材料坐标采样各段中心线。
 
-配置包含执行器或约束时，生成包还会提供相应的
-`softarm_actuator_*` 或 `softarm_constraint_*` 函数。
+配置包含执行器时，生成包还会提供相应的 `softarm_actuator_*` 函数；
+`symbolic_lagrange` 配置包含约束时还会生成 `softarm_constraint_*` 函数。
+递推构建遇到 `[constraint]` 会直接报错。
 
 ### 4.3 LaTeX 数学手册
 
-每次构建均生成 `softarm_model.tex`。文档依次给出模型摘要、符号与参数、
-运动学、能量与动力学、执行器和约束，并与同一生成包中的数值函数对应。
+每次构建均生成 `softarm_model.tex`。`symbolic_lagrange` 文档依次给出模型摘要、
+符号与参数、运动学、能量与动力学、执行器和约束，并与同一生成包中的数值函数
+对应。`recursive` 文档记录递推算法概要；它不展开全局符号动力学表达式。
 
 附加精确符号表达式：
 
@@ -453,6 +459,7 @@ uv run --locked softarm build examples/config/euler_bernoulli_ritz_n2.toml \
 
 `--tex-appendix` 将本次构建所选规范化与 CSE 策略处理后的
 $V,D,M,h,H_e,J_e,B_v$ 及适用的执行器、约束表达式加入附录。
+该选项只适用于 `symbolic_lagrange`。
 
 生成 PDF：
 
@@ -891,6 +898,18 @@ M(q,p)\ddot q+h(q,\dot q,p)
 =Q(q,\tau_a,w_B,w_e,p).
 $$
 
+`symbolic_lagrange` 直接构造上述全局符号 $M$ 和 $h$。`recursive` 则定义逆动力学
+映射 $r(q,\dot q,\ddot q)$：先逐段前向传播速度与加速度，再反向回拉空间力旋量。
+生成代码按
+
+$$
+h(q,\dot q)=r(q,\dot q,0),\qquad
+M_{:j}(q)=r(q,0,e_j)-r(q,0,0)
+$$
+
+数值装配质量矩阵和偏置项，其中 $e_j$ 是第 $j$ 个单位加速度。因而两种装配方法
+保持相同的 MATLAB 公共动力学接口，但递推方法不构造随总段数膨胀的全局符号式。
+
 设 $S_a$ 为软臂坐标选择矩阵，$J_B$ 为基座刚体 Jacobian，
 $R_{WB}$ 为机体系到 NED 世界系的旋转，则
 
@@ -1024,21 +1043,26 @@ $$
 
 ## 8. 示例索引
 
-| 示例 | 配置与生成包 |
-| --- | --- |
-| 两段 Extensible Euler–Bernoulli PCS，中点集中惯性 | `extensible_euler_bernoulli_pcs_lumped_n2` |
-| 两段 Extensible Euler–Bernoulli PCS，分布惯性 | `extensible_euler_bernoulli_pcs_distributed_n2` |
-| 两段 Euler–Bernoulli PAC，分布惯性 | `euler_bernoulli_pac_distributed_n2` |
-| 两段 Extensible Euler–Bernoulli PAC，分布惯性 | `extensible_euler_bernoulli_pac_distributed_n2` |
-| 两段 Euler–Bernoulli Ritz | `euler_bernoulli_ritz_n2` |
-| 两段 Euler–Bernoulli PCS | `euler_bernoulli_pcs_n2` |
-| 两段 Extensible Euler–Bernoulli Ritz | `extensible_euler_bernoulli_ritz_n2` |
-| 两段 Extensible Euler–Bernoulli PCS，三绳驱动 | `extensible_euler_bernoulli_pcs_three_tendon_n2` |
-| 两段 Extensible Euler–Bernoulli PCS，signed 绳索对 | `extensible_euler_bernoulli_pcs_signed_pair_n2` |
-| 两段 Euler–Bernoulli Ritz，两个 signed 绳索对 | `euler_bernoulli_ritz_two_signed_pairs_n2` |
-| 浮动基座 Extensible Euler–Bernoulli PCS，平面单点接触 | `extensible_euler_bernoulli_pcs_flying_plane_contact_n1` |
-| 单段 Cosserat PCS，分布惯性与三绳驱动 | `cosserat_pcs_distributed_tendon_n1` |
-| 单段 Cosserat PCS，中点集中惯性 | `cosserat_pcs_lumped_n1` |
+表中标识符同时对应 `examples/config/<标识符>.toml` 和
+`examples/generated/<标识符>/`。
+
+| 示例 | 标识符 | 动力学装配 |
+| --- | --- | --- |
+| 两段 Extensible Euler–Bernoulli PCS，中点集中惯性 | `extensible_euler_bernoulli_pcs_lumped_n2` | `symbolic_lagrange` |
+| 两段 Extensible Euler–Bernoulli PCS，分布惯性 | `extensible_euler_bernoulli_pcs_distributed_n2` | `symbolic_lagrange` |
+| 两段 Euler–Bernoulli PAC，分布惯性 | `euler_bernoulli_pac_distributed_n2` | `symbolic_lagrange` |
+| 两段 Extensible Euler–Bernoulli PAC，分布惯性 | `extensible_euler_bernoulli_pac_distributed_n2` | `symbolic_lagrange` |
+| 两段 Euler–Bernoulli Ritz | `euler_bernoulli_ritz_n2` | `symbolic_lagrange` |
+| 两段 Euler–Bernoulli PCS | `euler_bernoulli_pcs_n2` | `symbolic_lagrange` |
+| 两段 Extensible Euler–Bernoulli Ritz | `extensible_euler_bernoulli_ritz_n2` | `symbolic_lagrange` |
+| 两段 Extensible Euler–Bernoulli PCS，三绳驱动 | `extensible_euler_bernoulli_pcs_three_tendon_n2` | `symbolic_lagrange` |
+| 两段 Extensible Euler–Bernoulli PCS，signed 绳索对 | `extensible_euler_bernoulli_pcs_signed_pair_n2` | `symbolic_lagrange` |
+| 两段 Euler–Bernoulli Ritz，两个 signed 绳索对 | `euler_bernoulli_ritz_two_signed_pairs_n2` | `symbolic_lagrange` |
+| 浮动基座 Extensible Euler–Bernoulli PCS，平面单点接触 | `extensible_euler_bernoulli_pcs_flying_plane_contact_n1` | `symbolic_lagrange` |
+| 单段 Cosserat PCS，分布惯性与三绳驱动 | `cosserat_pcs_distributed_tendon_n1` | `symbolic_lagrange` |
+| 单段 Cosserat PCS，中点集中惯性 | `cosserat_pcs_lumped_n1` | `symbolic_lagrange` |
+| 二十段 Euler–Bernoulli PCS，固定基座、第一段三绳驱动 | `euler_bernoulli_pcs_recursive_n20` | `recursive` |
+| 五段 Extensible Euler–Bernoulli PCS，浮动基座、跨段 signed 绳索对 | `extensible_euler_bernoulli_pcs_recursive_flying_n5` | `recursive` |
 
 MATLAB 绳索驱动脚本见
 [`examples/actuation`](examples/actuation/)。

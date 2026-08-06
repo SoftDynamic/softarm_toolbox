@@ -51,6 +51,7 @@ fixed = softarm.loadModel(fullfile(root,"examples","generated", ...
     "euler_bernoulli_pcs_recursive_n20"));
 verifyEqual(testCase,string(fixed.manifest.model.dynamics_formulation),"recursive");
 verifyEqual(testCase,fixed.nq,40);
+verifyEqual(testCase,fixed.actuation.count,3);
 
 flying = softarm.loadModel(fullfile(root,"examples","generated", ...
     "extensible_euler_bernoulli_pcs_recursive_flying_n5"));

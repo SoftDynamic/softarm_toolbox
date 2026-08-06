@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,37 @@ def test_reference_configs_are_valid():
     for path in (ROOT / "examples" / "config").glob("*.toml"):
         config = load_config(path)
         assert derive(config).config.segments >= 1
+
+
+def test_readme_example_index_covers_every_reference_config():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    example_index = readme.split("## 8. 示例索引", maxsplit=1)[1]
+    for path in (ROOT / "examples" / "config").glob("*.toml"):
+        row = next(
+            line for line in example_index.splitlines()
+            if f"`{path.stem}`" in line
+        )
+        config = load_config(path)
+        assert f"`{config.dynamics.formulation}`" in row
+
+
+def test_reference_bundle_manifests_match_configs():
+    for path in (ROOT / "examples" / "config").glob("*.toml"):
+        config = load_config(path)
+        manifest_path = ROOT / "examples" / "generated" / path.stem / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        model = manifest["model"]
+        assert model["rod"] == config.rod
+        assert model["parameterization"] == config.parameterization
+        assert model["segments"] == config.segments
+        assert model["base_mode"] == config.base.mode
+        assert model["dynamics_formulation"] == config.dynamics.formulation
+        expected_channels = 0 if config.actuation is None else len(config.actuation.channels)
+        actual_channels = (
+            0 if manifest["actuation"] is None
+            else len(manifest["actuation"]["channels"])
+        )
+        assert actual_channels == expected_channels
 
 
 def test_base_and_constraint_validation(tmp_path):
