@@ -2,8 +2,7 @@
 
 本目录包含可直接运行的 SoftArm 顶层示例：
 
-- `softarm_tendon_force_demo.slx`：三绳拉力驱动。
-- `softarm_tendon_acceleration_demo.slx`：严格绳长加速度驱动。
+- `softarm_tendon_actuation_demo.slx`：可通过 `Actuator mode` Mask 切换三绳拉力或严格绳长加速度驱动。
 - `softarm_flying_contact_demo.slx`：浮动基座平面接触。
 
 Demo 引用的通用 Plant 和执行器模型位于 `../../matlab/simulink/`，模型加载回调

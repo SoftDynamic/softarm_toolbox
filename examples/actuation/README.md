@@ -26,13 +26,13 @@ uv run --locked softarm build `
 
 ## Simulink 示例
 
-打开 `examples/simulink/softarm_tendon_force_demo.slx` 或
-`examples/simulink/softarm_tendon_acceleration_demo.slx`。模型启动回调将加载
+打开 `examples/simulink/softarm_tendon_actuation_demo.slx`。模型启动回调将加载
 `matlab` 与 `matlab/simulink` 路径和默认的
 `extensible_euler_bernoulli_pcs_three_tendon_n2` 生成包。
 
-拉力 Demo 中双击 `Tension command` 修改三维拉力向量；加速度 Demo 中双击
-`Tendon acceleration` 修改三维绳长加速度。点击工具栏 Run，通过
+在 `Actuator mode` Mask 中选择 `Force` 或 `Acceleration`，再双击
+`Action command` 修改三维命令向量；该向量在 Force 模式表示拉力，在
+Acceleration 模式表示绳长加速度。点击工具栏 Run，通过
 `State scope` 查看广义坐标与速度。
 
 Bundle 选择位于 `softarm_plant.slx` 定义的 System Mask 中。双击 Demo 的

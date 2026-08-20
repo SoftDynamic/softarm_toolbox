@@ -528,8 +528,7 @@ ddq = plant.forwardDynamics( ...
 | `matlab/simulink/softarm_constrained_plant.slx` | 约束 Plant；增加约束加速度并输出反力与可行性 |
 | `matlab/simulink/softarm_actuator_force_block.slx` | 绳索拉力到软臂广义力的 Model Reference |
 | `matlab/simulink/softarm_actuator_acceleration_block.slx` | 严格绳长加速度约束的 Model Reference |
-| `examples/simulink/softarm_tendon_force_demo.slx` | 绳索拉力驱动示例 |
-| `examples/simulink/softarm_tendon_acceleration_demo.slx` | 绳长加速度驱动示例 |
+| `examples/simulink/softarm_tendon_actuation_demo.slx` | 可切换绳索拉力/绳长加速度驱动示例 |
 | `examples/simulink/softarm_flying_contact_demo.slx` | 浮动基座和平面单点接触示例 |
 
 Plant 模型的 `Bundle` System Mask 用于选择生成包，并据此配置基座、软臂、
