@@ -17,10 +17,13 @@ names = [
     "euler_bernoulli_pac_distributed_n2", ...
     "extensible_euler_bernoulli_pac_distributed_n2", ...
     "euler_bernoulli_ritz_n2","euler_bernoulli_pcs_n2", ...
+    "euler_bernoulli_ritz_flying_n2", ...
+    "euler_bernoulli_ritz_recursive_flying_n2", ...
     "extensible_euler_bernoulli_ritz_n2", ...
     "cosserat_pcs_lumped_n1","cosserat_pcs_distributed_tendon_n1", ...
     "euler_bernoulli_pcs_recursive_n20", ...
-    "extensible_euler_bernoulli_pcs_recursive_flying_n5"
+    "extensible_euler_bernoulli_pcs_recursive_flying_n5", ...
+    "extensible_euler_bernoulli_pcs_recursive_flying_plane_contact_n1"
 ];
 for name = names
     bundle = fullfile(testCase.TestData.root,"examples","generated",name);
@@ -43,6 +46,70 @@ for name = names
         zeros(6,1),zeros(6,1),plant.parameters);
     verifyTrue(testCase,all(isfinite(dx)));
 end
+end
+
+function testRecursiveParityReferenceBundles(testCase)
+root = testCase.TestData.root;
+ritzSymbolic = fullfile(root,"examples","generated", ...
+    "euler_bernoulli_ritz_flying_n2");
+ritzRecursive = fullfile(root,"examples","generated", ...
+    "euler_bernoulli_ritz_recursive_flying_n2");
+ritz = softarm.loadModel(ritzRecursive);
+q = zeros(ritz.nq,1);
+q(1:6) = [0.04;-0.03;0.02;0.13;-0.08;0.17];
+q(7:end) = [0.025;-0.018;0.014;-0.021];
+dq = linspace(-0.025,0.03,ritz.nq).';
+ddq = linspace(0.035,-0.02,ritz.nq).';
+ritzResult = verify_recursive_parity( ...
+    string(ritzSymbolic),string(ritzRecursive),q,dq,ddq);
+verifyLessThan(testCase,ritzResult.massError,1e-8);
+verifyLessThan(testCase,ritzResult.biasError,1e-8);
+verifyLessThan(testCase,ritzResult.inverseDynamicsError,1e-8);
+verifyLessThan(testCase,ritzResult.kinematicsError,1e-9);
+
+contactSymbolic = fullfile(root,"examples","generated", ...
+    "extensible_euler_bernoulli_pcs_flying_plane_contact_n1");
+contactRecursive = fullfile(root,"examples","generated", ...
+    "extensible_euler_bernoulli_pcs_recursive_flying_plane_contact_n1");
+contact = softarm.loadModel(contactRecursive);
+q = nominalConfiguration(contact);
+q(1:6) = [0.01;-0.015;0.02;0.08;-0.05;0.11];
+q(7:8) = [0.035;-0.025];
+q(9) = q(9)+0.008;
+dq = linspace(-0.012,0.016,contact.nq).';
+ddq = linspace(0.018,-0.014,contact.nq).';
+contactResult = verify_recursive_parity( ...
+    string(contactSymbolic),string(contactRecursive),q,dq,ddq);
+verifyLessThan(testCase,contactResult.massError,1e-8);
+verifyLessThan(testCase,contactResult.biasError,1e-8);
+verifyLessThan(testCase,contactResult.constraintValueError,1e-9);
+verifyLessThan(testCase,contactResult.constraintJacobianError,1e-9);
+verifyLessThan(testCase,contactResult.constraintBiasError,1e-8);
+verifyLessThan(testCase,contactResult.constraintReactionMapError,1e-8);
+
+contact = softarm.loadModel(contactRecursive);
+tau = zeros(contact.narm,1); vehicle = zeros(6,1); tip = zeros(6,1);
+command = 0;
+[solution,reaction] = contact.constraint.acceleration( ...
+    q,dq,tau,vehicle,tip,command,contact.parameters);
+M = contact.mass(q,contact.parameters);
+h = contact.bias(q,dq,contact.parameters);
+Q = contact.appliedForce(q,tau,vehicle,tip,contact.parameters);
+A = contact.constraint.jacobian(q,contact.parameters);
+phi = contact.constraint.value(q,contact.parameters);
+gamma = contact.constraint.velocityBias(q,dq,contact.parameters);
+G = contact.constraint.reactionMap(q,dq,contact.parameters);
+gains = softarm_constraint_stabilization(contact.parameters);
+omega = gains(:,1); zeta = gains(:,2);
+target = command-gamma-2*zeta.*omega.*(A*dq)-(omega.^2).*phi;
+verifyLessThan(testCase,norm(M*solution+h-Q-G*reaction,inf),1e-8);
+verifyLessThan(testCase,norm(A*solution-target,inf),1e-8);
+
+exactDocument = fileread(fullfile(root,"examples","generated", ...
+    "euler_bernoulli_pcs_recursive_n20","softarm_model.tex"));
+affineDocument = fileread(fullfile(ritzRecursive,"softarm_model.tex"));
+verifyTrue(testCase,contains(exactDocument,"Exact-SE(3)"));
+verifyTrue(testCase,contains(affineDocument,"global first-order affine"));
 end
 
 function testRecursiveReferenceBundles(testCase)

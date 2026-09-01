@@ -1,0 +1,44 @@
+function H = softarm_mount_transform(q,p)
+% Generated from the SymPy model. Do not edit.
+%#codegen
+base_x = q(1);
+base_y = q(2);
+base_z = q(3);
+base_roll = q(4);
+base_pitch = q(5);
+base_yaw = q(6);
+bx1 = q(7);
+by1 = q(8);
+l1 = q(9);
+s1_rest_length = p(1);
+s1_mass = p(2);
+s1_Ixx = p(3);
+s1_Iyy = p(4);
+s1_Izz = p(5);
+s1_k_bx = p(6);
+s1_k_by = p(7);
+s1_k_l = p(8);
+s1_d_bx = p(9);
+s1_d_by = p(10);
+s1_d_l = p(11);
+gravity = p(12);
+tip_mass = p(13);
+tip_Ixx = p(14);
+tip_Iyy = p(15);
+tip_Izz = p(16);
+vehicle_mass = p(17);
+vehicle_Ixx = p(18);
+vehicle_Iyy = p(19);
+vehicle_Izz = p(20);
+t0 = cos(base_pitch);
+t1 = cos(base_yaw);
+t2 = sin(base_yaw);
+t3 = sin(base_pitch);
+t4 = cos(base_roll);
+t5 = t2.*t4;
+t6 = sin(base_roll);
+t7 = t1.*t6;
+t8 = t1.*t4;
+t9 = t2.*t6;
+H = reshape([t0.*t1;t0.*t2;-t3;0;t3.*t7 - t5;t3.*t9 + t8;t0.*t6;0;t3.*t8 + t9;t3.*t5 - t7;t0.*t4;0;base_x;base_y;base_z;1],4,4);
+end

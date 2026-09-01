@@ -1,0 +1,43 @@
+function wrench = softarm_recursive_tip(v,w,a,alpha,g,p)
+% Generated from the SymPy model. Do not edit.
+%#codegen
+tip_vx = v(1);
+tip_vy = v(2);
+tip_vz = v(3);
+tip_wx = w(1);
+tip_wy = w(2);
+tip_wz = w(3);
+tip_ax = a(1);
+tip_ay = a(2);
+tip_az = a(3);
+tip_alphax = alpha(1);
+tip_alphay = alpha(2);
+tip_alphaz = alpha(3);
+tip_gx = g(1);
+tip_gy = g(2);
+tip_gz = g(3);
+s1_rest_length = p(1);
+s1_mass = p(2);
+s1_Ixx = p(3);
+s1_Iyy = p(4);
+s1_Izz = p(5);
+s1_k_bx = p(6);
+s1_k_by = p(7);
+s1_k_l = p(8);
+s1_d_bx = p(9);
+s1_d_by = p(10);
+s1_d_l = p(11);
+gravity = p(12);
+tip_mass = p(13);
+tip_Ixx = p(14);
+tip_Iyy = p(15);
+tip_Izz = p(16);
+vehicle_mass = p(17);
+vehicle_Ixx = p(18);
+vehicle_Iyy = p(19);
+vehicle_Izz = p(20);
+t0 = tip_wy.*tip_wz;
+t1 = tip_wx.*tip_wz;
+t2 = tip_wx.*tip_wy;
+wrench = reshape([tip_mass.*(tip_ax - tip_gx);tip_mass.*(tip_ay - tip_gy);tip_mass.*(tip_az - tip_gz);-t0.*tip_Iyy + t0.*tip_Izz + tip_Ixx.*tip_alphax;t1.*tip_Ixx - t1.*tip_Izz + tip_Iyy.*tip_alphay;-t2.*tip_Ixx + t2.*tip_Iyy + tip_Izz.*tip_alphaz],6,1);
+end

@@ -8,7 +8,13 @@ import sympy as sp
 from sympy.printing.octave import OctaveCodePrinter
 
 from ..actuation import ActuationModel
-from ..constraints import ConstraintModel
+from ..config import ConstraintConfig
+from ..constraints import (
+    ConstraintDefinition,
+    ConstraintModel,
+    derive_constraint,
+    derive_constraint_definition,
+)
 from ..models import PlantModel, RecursivePlant, SymbolicPlant
 from .optimization import FunctionOptimizer
 
@@ -156,13 +162,19 @@ def generate_matlab_bundle(
     plant: PlantModel,
     output: str | Path,
     actuation: ActuationModel | None = None,
-    constraint: ConstraintModel | None = None,
+    constraint: ConstraintModel | ConstraintDefinition | ConstraintConfig | None = None,
     tex_appendix: bool = False,
     optimizer: FunctionOptimizer | None = None,
 ) -> Path:
+    if isinstance(constraint, ConstraintConfig):
+        constraint = (
+            derive_constraint_definition(constraint)
+            if isinstance(plant, RecursivePlant)
+            else derive_constraint(plant, constraint)
+        )
     if isinstance(plant, RecursivePlant):
-        if constraint is not None:
-            raise ValueError("recursive dynamics do not yet support constraints")
+        if constraint is not None and not isinstance(constraint, ConstraintDefinition):
+            raise TypeError("recursive plant requires a ConstraintDefinition")
         if tex_appendix:
             raise ValueError("recursive dynamics do not support a symbolic TeX appendix")
         from .recursive_matlab import generate_recursive_matlab_bundle
@@ -171,10 +183,13 @@ def generate_matlab_bundle(
             plant,
             output,
             actuation=actuation,
+            constraint=constraint,
             optimizer=optimizer,
         )
     if not isinstance(plant, SymbolicPlant):
         raise TypeError("unsupported plant representation")
+    if constraint is not None and not isinstance(constraint, ConstraintModel):
+        raise TypeError("symbolic plant requires a materialized ConstraintModel")
     function_optimizer = optimizer or FunctionOptimizer()
     target = Path(output).resolve()
     target.mkdir(parents=True, exist_ok=True)

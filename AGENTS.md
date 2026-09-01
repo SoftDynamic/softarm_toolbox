@@ -5,8 +5,10 @@
 
 ## 1. 架构边界
 
-- SymPy 表达式是运动学、能量、动力学、执行器和约束公式的规范表示；模型公式、
-  几何装配和材料坐标积分只在 Python/SymPy 模型域中定义和执行。
+- SymPy 表达式是局部运动学、能量、执行器和约束标量公式的规范表示。
+  `symbolic_lagrange` 在 Python/SymPy 中完成全局装配；`recursive` 从相同局部
+  `ModelDefinition`/`LocalVariationalKernel` 出发，由 MATLAB 或 CasADi 算法式执行
+  变换传播、材料求积和矩阵求解，不得回退构造全局 SymPy $M,h$。
 - 构建编排层可将统一 bias 公式所需的批量求导交给 Wolfram。`FactorTerms` 和
   实验性 Wolfram CSE 只有在用户显式选择对应构建选项时执行；失败必须报错，
   禁止自动回退、静默跳过、复杂度阈值或模型/配置专用路由。
@@ -75,7 +77,8 @@
 
 ### 4.2 约束
 
-- `ConstraintModel` 描述约束值、Jacobian、速度偏置、反力映射和稳定化参数。
+- `ConstraintModel` 描述物化的符号约束；`ConstraintDefinition` 保存目标无关的
+  通道、参数和几何元数据，供 Recursive 工具点 jet 构造相同约束公式。
 - 理想约束使用 $G=A^T$；非理想反力可提供独立的 $G$。
 - 内置约束求解器使用无正则化 KKT 方程。
 - `plane_point_contact` 表示已激活的持续接触阶段。接近、碰撞和脱离由上层
@@ -89,8 +92,9 @@
   参考包和测试。
 - 公共 MATLAB 函数签名保持稳定；签名调整属于跨 Python 生成器、MATLAB
   加载层和 Simulink 模型的联合变更。
-- `softarm_model.tex` 与 MATLAB 代码共享同一 `SymbolicPlant`、
-  `ActuationModel` 和 `ConstraintModel`。
+- `symbolic_lagrange` 的 `softarm_model.tex` 与数值代码共享同一 `SymbolicPlant`、
+  `ActuationModel` 和 `ConstraintModel`；Recursive 手册必须准确记录所选
+  Exact-SE(3) 或 affine Ritz 算法，不得声称展开全局符号表达式。
 - 数学手册正文使用命名装配公式。`--tex-appendix` 用于输出优化和 CSE 后的
   精确表达式；大型浮动基座模型的附录体量应在提交前评估。
 - MATLAB 与 TeX appendix 共享同一函数级优化缓存。默认使用 `sympy.cse`；
@@ -143,6 +147,8 @@ uv run --locked softarm matlab -batch "addpath('matlab'); r=runtests('matlab/tes
 - 外力虚功
 - PCS 零曲率处的函数值及一、二阶导数
 - SymPy、Wolfram 和 MATLAB 数值一致性
+- Symbolic-Lagrange 与 Recursive 在非零状态下的动力学和运动学一致性
+- CasADi AD、隐式残差、KKT 残差及自包含 C 代码生成
 - 执行器虚功、轴向模态和严格加速度可行性
 - 约束 Jacobian、反力映射和摩擦耗散
 - 单段与多段组合

@@ -11,7 +11,13 @@ from .config import (
     ModelConfig,
     load_config,
 )
-from .constraints import ConstraintModel, derive_constraint, register_constraint
+from .constraints import (
+    ConstraintDefinition,
+    ConstraintModel,
+    derive_constraint,
+    derive_constraint_definition,
+    register_constraint,
+)
 from .derive import derive, register_model
 from .dynamics import SymbolicLagrangeAssembler
 from .modeling import (
@@ -37,6 +43,7 @@ __all__ = [
     "CasadiBundle",
     "BaseConfig",
     "ConstraintConfig",
+    "ConstraintDefinition",
     "ConstraintModel",
     "DynamicsConfig",
     "ModelConfig",
@@ -63,6 +70,7 @@ __all__ = [
     "derive_system",
     "derive_actuation",
     "derive_constraint",
+    "derive_constraint_definition",
     "generate_casadi_bundle",
     "load_config",
     "load_casadi_bundle",

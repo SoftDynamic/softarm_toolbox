@@ -8,9 +8,10 @@ from pathlib import Path
 
 from .actuation import derive_actuation
 from .config import ConfigError, load_config
-from .constraints import derive_constraint
+from .constraints import derive_constraint, derive_constraint_definition
 from .derive import derive
 from .local_tools import load_local_tools, local_tool_config_path
+from .models import RecursivePlant
 from .pipeline import BuildOptions, build_bundle
 
 
@@ -91,7 +92,11 @@ def main(argv: list[str] | None = None) -> int:
             config = load_config(args.config)
             plant = derive(config)
             actuation = derive_actuation(plant)
-            constraint = derive_constraint(plant)
+            constraint = (
+                derive_constraint_definition(config.constraint)
+                if isinstance(plant, RecursivePlant)
+                else derive_constraint(plant)
+            )
             suffix = "" if actuation is None else f" and {actuation.count} actuator channel(s)"
             if constraint is not None:
                 suffix += f" and {constraint.count} constraint channel(s)"

@@ -423,11 +423,23 @@ class BuildDiagnostics:
                 _setting("Actuator velocity bias", _format_shape(actuation.velocity_bias.shape), indent=2),
             ])
         if constraint is not None:
+            coordinates_shape = getattr(
+                getattr(constraint, "coordinates", None), "shape", (constraint.count, 1)
+            )
+            jacobian_shape = getattr(
+                getattr(constraint, "jacobian", None), "shape", (constraint.count, nq)
+            )
+            bias_shape = getattr(
+                getattr(constraint, "velocity_bias", None), "shape", (constraint.count, 1)
+            )
+            reaction_shape = getattr(
+                getattr(constraint, "reaction_map", None), "shape", (nq, constraint.count)
+            )
             lines.extend([
-                _setting("Constraint coordinates", _format_shape(constraint.coordinates.shape), indent=2),
-                _setting("Constraint Jacobian A", _format_shape(constraint.jacobian.shape), indent=2),
-                _setting("Constraint velocity bias", _format_shape(constraint.velocity_bias.shape), indent=2),
-                _setting("Constraint reaction map", _format_shape(constraint.reaction_map.shape), indent=2),
+                _setting("Constraint coordinates", _format_shape(coordinates_shape), indent=2),
+                _setting("Constraint Jacobian A", _format_shape(jacobian_shape), indent=2),
+                _setting("Constraint velocity bias", _format_shape(bias_shape), indent=2),
+                _setting("Constraint reaction map", _format_shape(reaction_shape), indent=2),
             ])
         lines.extend([
             "",

@@ -11,14 +11,26 @@ import sympy as sp
 
 from softarm.actuation import derive_actuation
 from softarm.codegen import generate_matlab_bundle
-from softarm.config import DynamicsConfig, IntegrationConfig, ModelConfig, load_config
+from softarm.config import (
+    BaseConfig,
+    DynamicsConfig,
+    IntegrationConfig,
+    ModelConfig,
+    load_config,
+)
 from softarm.derive import derive
 from softarm.models import RecursivePlant
-from softarm.pipeline import BuildError, BuildOptions, build_bundle
+from softarm.pipeline import BuildOptions, build_bundle
 from softarm.recursive import local_kernel_for
 from softarm.special import LAMBDA_MODULES
 
 ROOT = Path(__file__).parents[1]
+RECURSIVE_REFERENCE_NAMES = (
+    "euler_bernoulli_pcs_recursive_n20",
+    "extensible_euler_bernoulli_pcs_recursive_flying_n5",
+    "euler_bernoulli_ritz_recursive_flying_n2",
+    "extensible_euler_bernoulli_pcs_recursive_flying_plane_contact_n1",
+)
 
 
 def _recursive_config(segments: int = 1) -> ModelConfig:
@@ -65,6 +77,8 @@ def test_recursive_bundle_preserves_public_matlab_api(tmp_path):
     ).read_text(encoding="utf-8")
     wrapper = (tmp_path / "softarm_recursive_section.m").read_text(encoding="utf-8")
     assert "softarm_recursive_section_template" in wrapper
+    document = (tmp_path / "softarm_model.tex").read_text(encoding="utf-8")
+    assert "Exact-SE(3)" in document
 
 
 def test_twenty_section_bundle_reuses_one_local_template(tmp_path):
@@ -78,13 +92,29 @@ def test_twenty_section_bundle_reuses_one_local_template(tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("name", "segments", "base_mode", "actuator_count"),
+    ("name", "segments", "base_mode", "actuator_count", "constraint_family"),
     [
-        ("euler_bernoulli_pcs_recursive_n20", 20, "fixed", 3),
-        ("extensible_euler_bernoulli_pcs_recursive_flying_n5", 5, "floating_rpy", 2),
+        ("euler_bernoulli_pcs_recursive_n20", 20, "fixed", 3, None),
+        (
+            "extensible_euler_bernoulli_pcs_recursive_flying_n5",
+            5,
+            "floating_rpy",
+            2,
+            None,
+        ),
+        ("euler_bernoulli_ritz_recursive_flying_n2", 2, "floating_rpy", 0, None),
+        (
+            "extensible_euler_bernoulli_pcs_recursive_flying_plane_contact_n1",
+            1,
+            "floating_rpy",
+            3,
+            "plane_point_contact",
+        ),
     ],
 )
-def test_recursive_reference_bundle_manifest(name, segments, base_mode, actuator_count):
+def test_recursive_reference_bundle_manifest(
+    name, segments, base_mode, actuator_count, constraint_family
+):
     config_path = ROOT / "examples" / "config" / f"{name}.toml"
     bundle_path = ROOT / "examples" / "generated" / name
     config = load_config(config_path)
@@ -95,11 +125,39 @@ def test_recursive_reference_bundle_manifest(name, segments, base_mode, actuator
     assert manifest["model"]["base_mode"] == base_mode
     channels = [] if manifest["actuation"] is None else manifest["actuation"]["channels"]
     assert len(channels) == actuator_count
+    assert (
+        None if manifest["constraint"] is None else manifest["constraint"]["family"]
+    ) == constraint_family
     assert (bundle_path / "softarm_inverse_dynamics.m").is_file()
-    assert (bundle_path / "softarm_recursive_section_template.m").is_file()
+    if config.parameterization == "ritz":
+        assert (bundle_path / "softarm_affine_kinematic_jet.m").is_file()
+    else:
+        assert (bundle_path / "softarm_recursive_section_template.m").is_file()
+    assert (bundle_path / "softarm_tool_point_jet.m").is_file()
 
 
-def test_recursive_legacy_ritz_uses_affine_template(tmp_path):
+@pytest.mark.parametrize("name", RECURSIVE_REFERENCE_NAMES)
+def test_recursive_reference_bundle_matches_current_generator(tmp_path, name):
+    config = load_config(ROOT / "examples" / "config" / f"{name}.toml")
+    # Keep generated paths below the legacy Windows MAX_PATH limit.
+    actual = build_bundle(config, tmp_path / "bundle")
+    expected = ROOT / "examples" / "generated" / name
+    actual_files = {
+        path.relative_to(actual).as_posix(): path
+        for path in actual.rglob("*")
+        if path.is_file()
+    }
+    expected_files = {
+        path.relative_to(expected).as_posix(): path
+        for path in expected.rglob("*")
+        if path.is_file()
+    }
+    assert actual_files.keys() == expected_files.keys()
+    for relative, path in actual_files.items():
+        assert path.read_bytes() == expected_files[relative].read_bytes(), relative
+
+
+def test_recursive_ritz_uses_affine_template(tmp_path):
     plant = derive(ModelConfig(
         rod="euler_bernoulli",
         parameterization="ritz",
@@ -111,9 +169,28 @@ def test_recursive_legacy_ritz_uses_affine_template(tmp_path):
     ))
     generate_matlab_bundle(plant, tmp_path)
     assert (tmp_path / "softarm_legacy_affine_template.m").is_file()
-    assert "softarm_legacy_step" in (
+    assert (tmp_path / "softarm_affine_kinematic_jet.m").is_file()
+    assert "softarm_inverse_dynamics" in (
         tmp_path / "softarm_mass.m"
     ).read_text(encoding="utf-8")
+    document = (tmp_path / "softarm_model.tex").read_text(encoding="utf-8")
+    assert "global first-order affine" in document
+
+
+def test_recursive_affine_ritz_supports_floating_base_matlab(tmp_path):
+    plant = derive(ModelConfig(
+        rod="euler_bernoulli",
+        parameterization="ritz",
+        segments=1,
+        dynamics=DynamicsConfig("recursive"),
+        integration=IntegrationConfig(),
+        ritz_x=(0.0, 0.0, 1.5, -0.5),
+        ritz_y=(0.0, 0.0, 1.5, -0.5),
+        base=BaseConfig(mode="floating_rpy"),
+    ))
+    generate_matlab_bundle(plant, tmp_path)
+    assert (tmp_path / "softarm_affine_base_jet_raw.m").is_file()
+    assert (tmp_path / "softarm_tool_point_jet.m").is_file()
 
 
 def test_recursive_build_rejects_symbolic_only_options(tmp_path):
@@ -137,14 +214,24 @@ def test_recursive_bundle_keeps_existing_actuator_interface(tmp_path):
     assert manifest["actuation"]["family"] == "tendon"
 
 
-def test_recursive_constraint_request_fails_explicitly(tmp_path):
+def test_recursive_constraint_bundle_exposes_matlab_api(tmp_path):
     config = load_config(
         ROOT
         / "examples/config/extensible_euler_bernoulli_pcs_flying_plane_contact_n1.toml"
     )
     config = replace(config, dynamics=DynamicsConfig("recursive"))
-    with pytest.raises(BuildError, match="do not yet support constraints"):
-        build_bundle(config, tmp_path)
+    build_bundle(config, tmp_path)
+    manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["constraint"]["family"] == "plane_point_contact"
+    for name in (
+        "softarm_constraint_value.m",
+        "softarm_constraint_jacobian.m",
+        "softarm_constraint_velocity_bias.m",
+        "softarm_constraint_reaction_map.m",
+        "softarm_constraint_acceleration.m",
+        "softarm_tool_point_jet.m",
+    ):
+        assert (tmp_path / name).is_file()
 
 
 def _parameter(plant, name):

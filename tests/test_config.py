@@ -1,18 +1,27 @@
 import json
+from functools import lru_cache
 from pathlib import Path
 
 import pytest
 
 from softarm.config import ConfigError, load_config
 from softarm.derive import derive
+from softarm.pipeline import derive_system
 
 ROOT = Path(__file__).parents[1]
 
 
+@lru_cache
+def _reference_system(path_text: str):
+    config = load_config(Path(path_text))
+    return config, derive_system(config)
+
+
 def test_reference_configs_are_valid():
     for path in (ROOT / "examples" / "config").glob("*.toml"):
-        config = load_config(path)
-        assert derive(config).config.segments >= 1
+        config, system = _reference_system(str(path))
+        assert system.plant.config == config
+        assert system.plant.config.segments >= 1
 
 
 def test_readme_example_index_covers_every_reference_config():
@@ -29,7 +38,7 @@ def test_readme_example_index_covers_every_reference_config():
 
 def test_reference_bundle_manifests_match_configs():
     for path in (ROOT / "examples" / "config").glob("*.toml"):
-        config = load_config(path)
+        config, system = _reference_system(str(path))
         manifest_path = ROOT / "examples" / "generated" / path.stem / "manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         model = manifest["model"]
@@ -38,12 +47,44 @@ def test_reference_bundle_manifests_match_configs():
         assert model["segments"] == config.segments
         assert model["base_mode"] == config.base.mode
         assert model["dynamics_formulation"] == config.dynamics.formulation
-        expected_channels = 0 if config.actuation is None else len(config.actuation.channels)
-        actual_channels = (
-            0 if manifest["actuation"] is None
-            else len(manifest["actuation"]["channels"])
-        )
-        assert actual_channels == expected_channels
+        assert model["mount_xyz"] == list(config.base.mount_xyz)
+        assert model["mount_rpy"] == list(config.base.mount_rpy)
+        expected_parameters = list(system.plant.parameters)
+        if system.actuation is not None:
+            expected_parameters.extend(system.actuation.parameters)
+        if system.constraint is not None:
+            expected_parameters.extend(system.constraint.parameters)
+        assert [item["name"] for item in manifest["parameters"]] == [
+            item.name for item in expected_parameters
+        ]
+        assert [item["default"] for item in manifest["parameters"]] == [
+            item.default for item in expected_parameters
+        ]
+        expected_actuation = None if system.actuation is None else {
+            "family": system.actuation.family,
+            "acceleration": system.actuation.acceleration,
+            "channels": [
+                {"name": name, "kind": kind}
+                for name, kind in zip(
+                    system.actuation.channel_names,
+                    system.actuation.channel_kinds,
+                    strict=True,
+                )
+            ],
+        }
+        assert manifest["actuation"] == expected_actuation
+        expected_constraint = None if system.constraint is None else {
+            "family": system.constraint.family,
+            "channels": [
+                {"name": name, "kind": kind}
+                for name, kind in zip(
+                    system.constraint.channel_names,
+                    system.constraint.channel_kinds,
+                    strict=True,
+                )
+            ],
+        }
+        assert manifest["constraint"] == expected_constraint
 
 
 def test_base_and_constraint_validation(tmp_path):

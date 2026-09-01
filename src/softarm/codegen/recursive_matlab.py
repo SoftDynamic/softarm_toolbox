@@ -6,6 +6,7 @@ from pathlib import Path
 import sympy as sp
 
 from ..actuation import ActuationModel
+from ..constraints import ConstraintDefinition
 from ..geometry import angular_jacobian, transform_rpy
 from ..models import RecursivePlant
 from ..recursive import local_kernel_for
@@ -533,6 +534,42 @@ end
 """,
         encoding="utf-8",
     )
+    (target / "softarm_tool_point_jet.m").write_text(
+        f"""function [position,J,gamma,velocity]=softarm_tool_point_jet(q,dq,toolOffset,p)
+%SOFTARM_TOOL_POINT_JET World-frame point kinematics and acceleration bias.
+%#codegen
+q=q(:); dq=dq(:); toolOffset=toolOffset(:); assert(numel(toolOffset)==3);
+base=softarm_recursive_base(q,dq,zeros({base_count},1),p);
+v=base(1:3); w=base(4:6); a=base(7:9); alpha=base(10:12);
+T=softarm_mount_transform(q,p);
+for section=1:{segments}
+    first={base_count}+(section-1)*{dof}+1; last=first+{dof}-1;
+    jet=softarm_recursive_end(section,q,dq,p); cursor=1;
+    rotation=reshape(jet(cursor:cursor+8),3,3); cursor=cursor+9;
+    offset=jet(cursor:cursor+2); cursor=cursor+3;
+    Jv=reshape(jet(cursor:cursor+{3*dof-1}),3,{dof}); cursor=cursor+{3*dof};
+    Jw=reshape(jet(cursor:cursor+{3*dof-1}),3,{dof}); cursor=cursor+{3*dof};
+    Jvd=reshape(jet(cursor:cursor+{3*dof-1}),3,{dof}); cursor=cursor+{3*dof};
+    Jwd=reshape(jet(cursor:cursor+{3*dof-1}),3,{dof});
+    relativeV=Jv*dq(first:last); relativeW=Jw*dq(first:last);
+    vParent=v+cross(w,offset)+relativeV; wParent=w+relativeW;
+    aParent=a+cross(alpha,offset)+cross(w,cross(w,offset))+2*cross(w,relativeV)+Jvd*dq(first:last);
+    alphaParent=alpha+cross(w,relativeW)+Jwd*dq(first:last);
+    v=rotation.'*vParent; w=rotation.'*wParent;
+    a=rotation.'*aParent; alpha=rotation.'*alphaParent;
+    T=T*[rotation offset;0 0 0 1];
+end
+R=T(1:3,1:3); worldOffset=R*toolOffset;
+position=T(1:3,4)+worldOffset;
+endJ=softarm_end_jacobian(q,p);
+J=endJ(1:3,:)-softarm_skew(worldOffset)*endJ(4:6,:);
+velocity=J*dq;
+worldW=R*w; worldA=R*a; worldAlpha=R*alpha;
+gamma=worldA+cross(worldAlpha,worldOffset)+cross(worldW,cross(worldW,worldOffset));
+end
+""",
+        encoding="utf-8",
+    )
     (target / "softarm_skew.m").write_text(
         "function S=softarm_skew(v)\n%#codegen\nS=[0,-v(3),v(2);v(3),0,-v(1);-v(2),v(1),0];\nend\n",
         encoding="utf-8",
@@ -543,6 +580,7 @@ def generate_recursive_matlab_bundle(
     plant: RecursivePlant,
     output: str | Path,
     actuation: ActuationModel | None = None,
+    constraint: ConstraintDefinition | None = None,
     optimizer: FunctionOptimizer | None = None,
 ) -> Path:
     function_optimizer = optimizer or FunctionOptimizer()
@@ -583,9 +621,20 @@ end
     clear_actuator_functions(target)
     if actuation is not None:
         generate_actuator_matlab(plant, actuation, target, function_optimizer)
-    from .constraint_matlab import clear_constraint_functions
+    from .constraint_matlab import (
+        clear_constraint_functions,
+        generate_recursive_constraint_matlab,
+    )
 
     clear_constraint_functions(target)
+    if constraint is not None:
+        generate_recursive_constraint_matlab(
+            plant,
+            constraint,
+            target,
+            () if actuation is None else actuation.parameters,
+            function_optimizer,
+        )
     manifest = {
         "model": {
             "rod": plant.config.rod,
@@ -605,6 +654,7 @@ end
             {"name": item.name, "default": item.default}
             for item in plant.parameters
             + (() if actuation is None else actuation.parameters)
+            + (() if constraint is None else constraint.parameters)
         ],
         "actuation": None if actuation is None else {
             "family": actuation.family,
@@ -616,18 +666,43 @@ end
                 )
             ],
         },
-        "constraint": None,
+        "constraint": None if constraint is None else {
+            "family": constraint.family,
+            "channels": [
+                {"name": name, "kind": kind}
+                for name, kind in zip(
+                    constraint.channel_names,
+                    constraint.channel_kinds,
+                    strict=True,
+                )
+            ],
+        },
     }
     (target / "manifest.json").write_text(
         json.dumps(manifest, indent=2), encoding="utf-8"
     )
+    if plant.definition.linear_kinematics:
+        algorithm = (
+            "The displacement-Ritz model propagates a global first-order affine "
+            "transform jet while retaining the full nonlinear floating-base "
+            "transform and base--arm mixed terms. Arm--arm coordinate products are "
+            "discarded. Fixed Gauss quadrature directly assembles the mass matrix, "
+            "Coriolis, gravity, elastic, and damping terms. Forward and KKT dynamics "
+            "solve the resulting linear systems without forming an inverse.\n"
+        )
+    else:
+        algorithm = (
+            "The Exact-SE(3) inverse-dynamics routine propagates section boundary "
+            "velocities and accelerations forward and pulls spatial wrenches "
+            "backward. The mass matrix is obtained by unit-acceleration "
+            "inverse-dynamics calls, and $h(q,\\dot q)$ by a zero-acceleration "
+            "call.\n"
+        )
     (target / "softarm_model.tex").write_text(
         "\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\n"
         "\\section*{Recursive Soft-Arm Dynamics}\n"
-        "The generated inverse-dynamics routine propagates section boundary "
-        "velocities and accelerations forward and pulls spatial wrenches backward. "
-        "The mass matrix is obtained by unit-acceleration inverse-dynamics calls, "
-        "and $h(q,\\dot q)$ by a zero-acceleration call.\n\\end{document}\n",
+        + algorithm
+        + "\\end{document}\n",
         encoding="utf-8",
     )
     return target

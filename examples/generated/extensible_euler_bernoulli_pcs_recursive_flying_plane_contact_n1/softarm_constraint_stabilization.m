@@ -1,0 +1,41 @@
+function gains = softarm_constraint_stabilization(p)
+% Generated from the SymPy model. Do not edit.
+%#codegen
+s1_rest_length = p(1);
+s1_mass = p(2);
+s1_Ixx = p(3);
+s1_Iyy = p(4);
+s1_Izz = p(5);
+s1_k_bx = p(6);
+s1_k_by = p(7);
+s1_k_l = p(8);
+s1_d_bx = p(9);
+s1_d_by = p(10);
+s1_d_l = p(11);
+gravity = p(12);
+tip_mass = p(13);
+tip_Ixx = p(14);
+tip_Iyy = p(15);
+tip_Izz = p(16);
+vehicle_mass = p(17);
+vehicle_Ixx = p(18);
+vehicle_Iyy = p(19);
+vehicle_Izz = p(20);
+act_t1_s1_radius = p(21);
+act_t2_s1_radius = p(22);
+act_t3_s1_radius = p(23);
+constraint_tool_offset_x = p(24);
+constraint_tool_offset_y = p(25);
+constraint_tool_offset_z = p(26);
+constraint_plane_point_x = p(27);
+constraint_plane_point_y = p(28);
+constraint_plane_point_z = p(29);
+constraint_plane_normal_x = p(30);
+constraint_plane_normal_y = p(31);
+constraint_plane_normal_z = p(32);
+constraint_friction = p(33);
+constraint_friction_velocity = p(34);
+constraint_stabilization_frequency = p(35);
+constraint_stabilization_ratio = p(36);
+gains = reshape([constraint_stabilization_frequency;constraint_stabilization_ratio],1,2);
+end

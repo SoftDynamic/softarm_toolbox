@@ -10,6 +10,27 @@ from .models import PlantModel, RuntimeParameter
 
 
 @dataclass(frozen=True)
+class ConstraintDefinition:
+    """Target-independent point-jet constraint metadata and runtime parameters."""
+
+    family: str
+    channel_names: tuple[str, ...]
+    channel_kinds: tuple[str, ...]
+    parameters: tuple[RuntimeParameter, ...]
+    tool_offset: sp.Matrix
+    plane_point: sp.Matrix
+    plane_normal: sp.Matrix
+    friction: sp.Expr
+    friction_velocity: sp.Expr
+    stabilization_frequency: sp.Matrix
+    stabilization_ratio: sp.Matrix
+
+    @property
+    def count(self) -> int:
+        return len(self.channel_names)
+
+
+@dataclass(frozen=True)
 class ConstraintModel:
     """Acceleration-level constraints and their generalized reaction mapping."""
 
@@ -45,10 +66,7 @@ class ConstraintModel:
 ConstraintBuilder = Callable[[PlantModel, ConstraintConfig], ConstraintModel]
 
 
-def _plane_point_contact_builder(
-    plant: PlantModel,
-    config: ConstraintConfig,
-) -> ConstraintModel:
+def _plane_point_contact_definition(config: ConstraintConfig) -> ConstraintDefinition:
     data = config.data
     parameters: list[RuntimeParameter] = []
 
@@ -70,41 +88,99 @@ def _plane_point_contact_builder(
     plane_point = vector("plane_point", (0.0, 0.0, 0.0))
     normal_raw = vector("plane_normal", (0.0, 0.0, -1.0))
     normal_norm = sp.sqrt((normal_raw.T * normal_raw)[0])
-    normal = normal_raw / normal_norm
     friction = scalar("friction", 0.0)
     friction_velocity = scalar("friction_velocity", 0.01, positive=True)
     frequency = scalar("stabilization_frequency", 20.0, positive=True)
     ratio = scalar("stabilization_ratio", 1.0)
-
-    end_rotation = plant.end_transform[:3, :3]
-    end_position = plant.end_transform[:3, 3]
-    contact_position = end_position + end_rotation * tool_offset
-    point_jacobian = contact_position.jacobian(plant.q)
-    gap = sp.Matrix([(normal.T * (contact_position - plane_point))[0]])
-    jacobian = gap.jacobian(plant.q)
-    velocity_bias = (
-        (jacobian * plant.dq).jacobian(plant.q)
-        * plant.dq
-    )
-    point_velocity = point_jacobian * plant.dq
-    tangential_velocity = (sp.eye(3) - normal * normal.T) * point_velocity
-    regularized_speed = sp.sqrt(
-        (tangential_velocity.T * tangential_velocity)[0] + friction_velocity**2
-    )
-    contact_direction = normal - friction * tangential_velocity / regularized_speed
-    reaction_map = point_jacobian.T * contact_direction
-
-    return ConstraintModel(
+    return ConstraintDefinition(
         family="plane_point_contact",
         channel_names=("normal_contact",),
         channel_kinds=("unilateral",),
         parameters=tuple(parameters),
+        tool_offset=tool_offset,
+        plane_point=plane_point,
+        plane_normal=normal_raw / normal_norm,
+        friction=friction,
+        friction_velocity=friction_velocity,
+        stabilization_frequency=sp.Matrix([frequency]),
+        stabilization_ratio=sp.Matrix([ratio]),
+    )
+
+
+def derive_constraint_definition(
+    config: ConstraintConfig | None,
+) -> ConstraintDefinition | None:
+    """Build constraint metadata without requiring global plant kinematics."""
+    if config is None:
+        return None
+    if config.family != "plane_point_contact":
+        raise ValueError(
+            f"constraint family {config.family!r} has no recursive point-jet definition"
+        )
+    return _plane_point_contact_definition(config)
+
+
+def point_constraint_expressions(
+    definition: ConstraintDefinition,
+    point_position: sp.Matrix,
+    point_jacobian: sp.Matrix,
+    point_velocity_bias: sp.Matrix,
+    point_velocity: sp.Matrix,
+) -> tuple[sp.Matrix, sp.Matrix, sp.Matrix, sp.Matrix]:
+    """Evaluate the canonical plane-contact formula from a tool-point jet."""
+    if definition.family != "plane_point_contact":
+        raise ValueError(f"unsupported point constraint family: {definition.family}")
+    normal = definition.plane_normal
+    gap = sp.Matrix([(
+        normal.T * (point_position - definition.plane_point)
+    )[0]])
+    jacobian = normal.T * point_jacobian
+    velocity_bias = normal.T * point_velocity_bias
+    tangential_velocity = (sp.eye(3) - normal * normal.T) * point_velocity
+    regularized_speed = sp.sqrt(
+        (tangential_velocity.T * tangential_velocity)[0]
+        + definition.friction_velocity**2
+    )
+    contact_direction = (
+        normal - definition.friction * tangential_velocity / regularized_speed
+    )
+    reaction_map = point_jacobian.T * contact_direction
+    return gap, jacobian, velocity_bias, reaction_map
+
+
+def _plane_point_contact_builder(
+    plant: PlantModel,
+    config: ConstraintConfig,
+) -> ConstraintModel:
+    definition = _plane_point_contact_definition(config)
+
+    end_rotation = plant.end_transform[:3, :3]
+    end_position = plant.end_transform[:3, 3]
+    contact_position = end_position + end_rotation * definition.tool_offset
+    point_jacobian = contact_position.jacobian(plant.q)
+    point_velocity = point_jacobian * plant.dq
+    point_velocity_bias = (
+        point_velocity.jacobian(plant.q) * plant.dq
+    )
+    gap, jacobian, velocity_bias, reaction_map = point_constraint_expressions(
+        definition,
+        contact_position,
+        point_jacobian,
+        point_velocity_bias,
+        point_velocity,
+    )
+
+    return ConstraintModel(
+        family=definition.family,
+        channel_names=definition.channel_names,
+        channel_kinds=definition.channel_kinds,
+        parameters=definition.parameters,
         coordinates=gap,
         jacobian=jacobian,
         velocity_bias=velocity_bias,
         reaction_map=reaction_map,
-        stabilization_frequency=sp.Matrix([frequency]),
-        stabilization_ratio=sp.Matrix([ratio]),
+        stabilization_frequency=definition.stabilization_frequency,
+        stabilization_ratio=definition.stabilization_ratio,
     )
 
 

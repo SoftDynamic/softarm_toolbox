@@ -13,7 +13,12 @@ from .codegen.casadi import generate_casadi_bundle
 from .codegen.matlab import generate_matlab_bundle
 from .codegen.optimization import FunctionOptimizer, SympyCse
 from .config import ModelConfig
-from .constraints import ConstraintModel, derive_constraint
+from .constraints import (
+    ConstraintDefinition,
+    ConstraintModel,
+    derive_constraint,
+    derive_constraint_definition,
+)
 from .derive import derive
 from .diagnostics import BuildDiagnostics
 from .dynamics import SympyBatchDifferentiator, assemble_bias
@@ -64,7 +69,7 @@ class BuildOptions:
 class DerivedSystem:
     plant: PlantModel
     actuation: ActuationModel | None
-    constraint: ConstraintModel | None
+    constraint: ConstraintModel | ConstraintDefinition | None
 
 
 DEFAULT_BUILD_OPTIONS = BuildOptions()
@@ -113,12 +118,14 @@ def _timed_stage(
 
 def derive_system(config: ModelConfig) -> DerivedSystem:
     plant = derive(config)
-    if isinstance(plant, RecursivePlant) and config.constraint is not None:
-        raise ValueError("recursive dynamics do not yet support constraints")
     return DerivedSystem(
         plant=plant,
         actuation=derive_actuation(plant),
-        constraint=derive_constraint(plant),
+        constraint=(
+            derive_constraint_definition(config.constraint)
+            if isinstance(plant, RecursivePlant)
+            else derive_constraint(plant)
+        ),
     )
 
 
@@ -147,7 +154,7 @@ def _materialize_and_generate(
                         system.plant,
                         output,
                         actuation=system.actuation,
-                        constraint=None,
+                        constraint=system.constraint,
                         affine_terms=options.casadi_affine_terms,
                     )
             except Exception as error:
@@ -165,7 +172,7 @@ def _materialize_and_generate(
                     system.plant,
                     output,
                     actuation=system.actuation,
-                    constraint=None,
+                    constraint=system.constraint,
                     tex_appendix=options.tex_appendix,
                     optimizer=optimizer,
                 )

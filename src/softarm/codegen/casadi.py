@@ -8,8 +8,16 @@ from typing import Any
 import sympy as sp
 
 from ..actuation import ActuationModel
-from ..constraints import ConstraintModel
+from ..config import ConstraintConfig, IntegrationConfig
+from ..constraints import (
+    ConstraintDefinition,
+    ConstraintModel,
+    derive_constraint,
+    derive_constraint_definition,
+    point_constraint_expressions,
+)
 from ..geometry import angular_jacobian, transform_rpy
+from ..integration import unit_gauss_rule
 from ..models import PlantModel, RecursivePlant, RuntimeParameter, SymbolicPlant
 from ..recursive import local_kernel_for
 from ..special import (
@@ -297,7 +305,7 @@ def _sympy_function(
 def _runtime_parameters(
     plant: PlantModel,
     actuation: ActuationModel | None,
-    constraint: ConstraintModel | None,
+    constraint: ConstraintModel | ConstraintDefinition | None,
 ) -> tuple[RuntimeParameter, ...]:
     return (
         plant.parameters
@@ -430,12 +438,478 @@ def _symbolic_core(
     return functions
 
 
+def _point_constraint_kernel(
+    definition: ConstraintDefinition,
+    nq: int,
+    parameters: tuple[RuntimeParameter, ...],
+    affine_terms: int | None,
+):
+    position = sp.Matrix(sp.symbols("point_px point_py point_pz", real=True))
+    jacobian_symbols = sp.Matrix(
+        sp.symbols(f"point_j1:{3 * nq + 1}", real=True)
+    )
+    jacobian = sp.Matrix(3, nq, list(jacobian_symbols))
+    velocity_bias = sp.Matrix(
+        sp.symbols("point_gx point_gy point_gz", real=True)
+    )
+    velocity = sp.Matrix(sp.symbols("point_vx point_vy point_vz", real=True))
+    outputs = point_constraint_expressions(
+        definition, position, jacobian, velocity_bias, velocity
+    )
+    p = sp.Matrix([item.symbol for item in parameters])
+    return _sympy_function(
+        "softarm_point_constraint_kernel",
+        [
+            ("position", position),
+            ("jacobian", jacobian_symbols),
+            ("velocity_bias", velocity_bias),
+            ("velocity", velocity),
+            ("p", p),
+        ],
+        [
+            ("phi", outputs[0]),
+            ("A", outputs[1]),
+            ("gamma", outputs[2]),
+            ("G", outputs[3]),
+        ],
+        affine_terms,
+    )
+
+
+def _recursive_constraint_core(
+    plant: RecursivePlant,
+    core: dict[str, Any],
+    definition: ConstraintDefinition,
+    parameters: tuple[RuntimeParameter, ...],
+    affine_terms: int | None,
+) -> None:
+    ca = _import_casadi()
+    nq = len(plant.q)
+    q = ca.MX.sym("q", nq)
+    dq = ca.MX.sym("dq", nq)
+    p = ca.MX.sym("p", len(parameters))
+    kernel = _point_constraint_kernel(definition, nq, parameters, affine_terms)
+    offset_indices = {
+        item.name: index for index, item in enumerate(parameters)
+    }
+    def terms(q_value, dq_value, p_value):
+        offset = ca.vertcat(*(
+            p_value[offset_indices[str(symbol)]]
+            for symbol in definition.tool_offset
+        ))
+        position, jacobian, velocity_bias, velocity = core["tool_point_jet"](
+            q_value, dq_value, offset, p_value
+        )
+        flat_jacobian = ca.vertcat(*(
+            jacobian[row, column]
+            for row in range(3)
+            for column in range(nq)
+        ))
+        return kernel(
+            position, flat_jacobian, velocity_bias, velocity, p_value
+        )
+
+    zero_dq = ca.MX.zeros(nq, 1)
+    phi, jacobian, _, _ = terms(q, zero_dq, p)
+    _, _, gamma, reaction_map = terms(q, dq, p)
+    core.update({
+        "constraint_value": ca.Function(
+            "softarm_constraint_value", [q, p], [phi], ["q", "p"], ["phi"]
+        ),
+        "constraint_jacobian": ca.Function(
+            "softarm_constraint_jacobian", [q, p], [jacobian], ["q", "p"], ["A"]
+        ),
+        "constraint_velocity_bias": ca.Function(
+            "softarm_constraint_velocity_bias",
+            [q, dq, p],
+            [gamma],
+            ["q", "dq", "p"],
+            ["gamma"],
+        ),
+        "constraint_reaction_map": ca.Function(
+            "softarm_constraint_reaction_map",
+            [q, dq, p],
+            [reaction_map],
+            ["q", "dq", "p"],
+            ["G"],
+        ),
+        "constraint_stabilization": _sympy_function(
+            "softarm_constraint_stabilization",
+            [("p", sp.Matrix([item.symbol for item in parameters]))],
+            [("gains", definition.stabilization_frequency.row_join(
+                definition.stabilization_ratio
+            ))],
+            affine_terms,
+        ),
+    })
+
+
+def _recursive_affine_core(
+    plant: RecursivePlant,
+    actuation: ActuationModel | None,
+    parameters: tuple[RuntimeParameter, ...],
+    affine_terms: int | None,
+) -> dict[str, Any]:
+    """Build the globally first-order Ritz model without arm-arm products."""
+    ca = _import_casadi()
+    definition = plant.definition
+    nq = len(plant.q)
+    nbase = len(plant.base_q)
+    narm = len(plant.arm_q)
+    segments = plant.config.segments
+    dof = narm // segments
+    q = ca.MX.sym("q", nq)
+    dq = ca.MX.sym("dq", nq)
+    ddq = ca.MX.sym("ddq", nq)
+    p = ca.MX.sym("p", len(parameters))
+    p_symbols = sp.Matrix([item.symbol for item in parameters])
+    parameter_indices = {item.name: index for index, item in enumerate(parameters)}
+
+    mount = transform_rpy(
+        tuple(sp.Float(str(value)) for value in plant.config.base.mount_xyz),
+        tuple(sp.Float(str(value)) for value in plant.config.base.mount_rpy),
+    )
+    mount_function = _sympy_function(
+        "softarm_mount_transform",
+        [("q", plant.q), ("p", p_symbols)],
+        [("H", plant.base_transform * mount)],
+        affine_terms,
+    )
+    base_function = _sympy_function(
+        "softarm_base_transform",
+        [("q", plant.q), ("p", p_symbols)],
+        [("H", plant.base_transform)],
+        affine_terms,
+    )
+
+    local_q_source = plant.arm_q[:dof, 0]
+    section_parameters = [
+        item for item in plant.parameters if item.name.startswith("s1_")
+    ]
+    generic_p = sp.Matrix(
+        sp.symbols(f"local_p1:{len(section_parameters) + 1}", real=True)
+    )
+    xi_symbol = sp.Symbol("xi", real=True, nonnegative=True)
+    local_transform = definition.kinematics.transform(0, xi_symbol)
+    zero_local = {coordinate: 0 for coordinate in local_q_source}
+    reference = local_transform.subs(zero_local)
+    derivatives = [
+        local_transform.diff(coordinate).subs(zero_local)
+        for coordinate in local_q_source
+    ]
+    substitutions = dict(zip(
+        (item.symbol for item in section_parameters), generic_p, strict=True
+    ))
+    affine_function = _sympy_function(
+        "softarm_recursive_affine_template",
+        [("p_local", generic_p), ("xi", sp.Matrix([xi_symbol]))],
+        [("reference", reference.xreplace(substitutions))]
+        + [
+            (f"derivative_{index + 1}", item.xreplace(substitutions))
+            for index, item in enumerate(derivatives)
+        ],
+        affine_terms,
+    )
+    suffixes = [item.name.removeprefix("s1_") for item in section_parameters]
+
+    masses = sp.Matrix(definition.sections.masses)
+    inertias = sp.Matrix.hstack(*definition.sections.inertias)
+    property_function = _sympy_function(
+        "softarm_recursive_affine_properties",
+        [("p", p_symbols)],
+        [("masses", masses), ("inertias", inertias)],
+        affine_terms,
+    )
+    mass_values, inertia_values = property_function(p)
+
+    arm_internal = sp.Matrix([
+        sp.diff(definition.elastic, coordinate) for coordinate in plant.arm_q
+    ])
+    damping = (
+        sp.diag(*definition.damping)
+        if isinstance(definition.damping, tuple)
+        else definition.damping
+    )
+    arm_internal += damping * plant.arm_dq
+    internal = sp.zeros(nq, 1)
+    internal[nbase:, 0] = arm_internal
+    internal_function = _sympy_function(
+        "softarm_recursive_internal_force",
+        [("q", plant.q), ("dq", plant.dq), ("p", p_symbols)],
+        [("tau", internal)],
+        affine_terms,
+    )
+
+    def local_parameters(section: int):
+        indices = [
+            parameter_indices[f"s{section + 1}_{suffix}"] for suffix in suffixes
+        ]
+        return p[indices]
+
+    def material_transform(
+        current_reference,
+        current_derivatives: list[Any],
+        section: int,
+        xi,
+    ):
+        local = affine_function(local_parameters(section), xi)
+        local_reference = local[0]
+        local_derivatives = list(local[1:])
+        result_reference = current_reference @ local_reference
+        result_derivatives = [
+            derivative @ local_reference for derivative in current_derivatives
+        ]
+        first = section * dof
+        for local_index, derivative in enumerate(local_derivatives):
+            result_derivatives[first + local_index] = current_reference @ derivative
+        actual = result_reference
+        for index, derivative in enumerate(result_derivatives):
+            actual += derivative * q[nbase + index]
+        return actual, result_reference, result_derivatives
+
+    def angular_jacobian(reference_rotation, derivatives: list[Any]):
+        columns = []
+        if nbase:
+            derivative_vector = ca.jacobian(
+                ca.reshape(reference_rotation, 9, 1), q
+            )[:, :nbase]
+            for index in range(nbase):
+                rate = (
+                    ca.reshape(derivative_vector[:, index], 3, 3)
+                    @ reference_rotation.T
+                )
+                skew = (rate - rate.T) / 2
+                columns.append(ca.vertcat(skew[2, 1], skew[0, 2], skew[1, 0]))
+        for derivative in derivatives:
+            rate = derivative[:3, :3] @ reference_rotation.T
+            skew = (rate - rate.T) / 2
+            columns.append(ca.vertcat(skew[2, 1], skew[0, 2], skew[1, 0]))
+        return ca.horzcat(*columns)
+
+    gravity = ca.vertcat(0, 0, p[parameter_indices["gravity"]])
+    mass = ca.MX.zeros(nq, nq)
+    gravity_force = ca.MX.zeros(nq, 1)
+
+    def body_terms(transform, reference_transform, derivatives, body_mass, inertia):
+        position = transform[:3, 3]
+        linear = ca.jacobian(position, q)
+        angular = angular_jacobian(reference_transform[:3, :3], derivatives)
+        rotation = reference_transform[:3, :3]
+        world_inertia = rotation @ inertia @ rotation.T
+        body_matrix = (
+            body_mass * (linear.T @ linear)
+            + angular.T @ world_inertia @ angular
+        )
+        body_gravity = -body_mass * gravity[2] * linear[2, :].T
+        return body_matrix, body_gravity
+
+    if nbase:
+        base_transform = base_function(q, p)
+        base_rotation = base_transform[:3, :3]
+        base_derivatives = [ca.MX.zeros(4, 4) for _ in range(narm)]
+        vehicle_inertia = ca.diag(ca.vertcat(
+            p[parameter_indices["vehicle_Ixx"]],
+            p[parameter_indices["vehicle_Iyy"]],
+            p[parameter_indices["vehicle_Izz"]],
+        ))
+        body_mass, body_gravity = body_terms(
+            base_transform,
+            base_transform,
+            base_derivatives,
+            p[parameter_indices["vehicle_mass"]],
+            vehicle_inertia,
+        )
+        mass += body_mass
+        gravity_force += body_gravity
+    else:
+        base_rotation = ca.MX.eye(3)
+
+    degree = max(
+        len(plant.config.ritz_x or ()) - 1,
+        len(plant.config.ritz_y or ()) - 1,
+        len(plant.config.ritz_z or ()) - 1,
+    )
+    quadrature = unit_gauss_rule(
+        IntegrationConfig("gauss", max(3, degree + 1))
+    )
+    current_reference = mount_function(q, p)
+    current_derivatives = [ca.MX.zeros(4, 4) for _ in range(narm)]
+    endpoint_transforms = []
+    endpoint_references = []
+    endpoint_derivatives = []
+    for section in range(segments):
+        section_inertia = inertia_values[:, 3 * section : 3 * (section + 1)]
+        for node, weight in quadrature:
+            material, material_reference, material_derivatives = material_transform(
+                current_reference,
+                current_derivatives,
+                section,
+                float(node),
+            )
+            body_mass, body_gravity = body_terms(
+                material,
+                material_reference,
+                material_derivatives,
+                mass_values[section],
+                section_inertia,
+            )
+            mass += float(weight) * body_mass
+            gravity_force += float(weight) * body_gravity
+        endpoint, endpoint_reference, derivatives_at_end = material_transform(
+            current_reference, current_derivatives, section, 1.0
+        )
+        endpoint_transforms.append(endpoint)
+        endpoint_references.append(endpoint_reference)
+        endpoint_derivatives.append(derivatives_at_end)
+        current_reference = endpoint_reference
+        current_derivatives = derivatives_at_end
+
+    tip_inertia = ca.diag(ca.vertcat(
+        p[parameter_indices["tip_Ixx"]],
+        p[parameter_indices["tip_Iyy"]],
+        p[parameter_indices["tip_Izz"]],
+    ))
+    body_mass, body_gravity = body_terms(
+        endpoint_transforms[-1],
+        endpoint_references[-1],
+        endpoint_derivatives[-1],
+        p[parameter_indices["tip_mass"]],
+        tip_inertia,
+    )
+    mass += body_mass
+    gravity_force += body_gravity
+    mass = (mass + mass.T) / 2
+    kinetic_twice = ca.mtimes([dq.T, mass, dq])
+    coriolis = (
+        ca.jtimes(mass @ dq, q, dq)
+        - ca.gradient(kinetic_twice, q) / 2
+    )
+    bias = coriolis + gravity_force + internal_function(q, dq, p)
+    inverse_function = ca.Function(
+        "softarm_inverse_dynamics",
+        [q, dq, ddq, p],
+        [mass @ ddq + bias],
+        ["q", "dq", "ddq", "p"],
+        ["tau"],
+    )
+    mass_function = ca.Function("softarm_mass", [q, p], [mass], ["q", "p"], ["M"])
+    bias_function = ca.Function(
+        "softarm_bias",
+        [q, dq, p],
+        [bias],
+        ["q", "dq", "p"],
+        ["h"],
+    )
+    kinematics_function = ca.Function(
+        "softarm_kinematics",
+        [q, p],
+        [ca.horzcat(*endpoint_transforms)],
+        ["q", "p"],
+        ["H"],
+    )
+    xi = ca.MX.sym("xi")
+    points = []
+    current_reference = mount_function(q, p)
+    current_derivatives = [ca.MX.zeros(4, 4) for _ in range(narm)]
+    for section in range(segments):
+        material, _, _ = material_transform(
+            current_reference, current_derivatives, section, xi
+        )
+        points.append(material[:3, 3])
+        _, current_reference, current_derivatives = material_transform(
+            current_reference, current_derivatives, section, 1.0
+        )
+    centerline_function = ca.Function(
+        "softarm_centerline_at",
+        [q, p, xi],
+        [ca.horzcat(*points)],
+        ["q", "p", "xi"],
+        ["position"],
+    )
+    end_transform = endpoint_transforms[-1]
+    end_linear = ca.jacobian(end_transform[:3, 3], q)
+    end_angular = angular_jacobian(
+        endpoint_references[-1][:3, :3], endpoint_derivatives[-1]
+    )
+    end_jacobian_function = ca.Function(
+        "softarm_end_jacobian",
+        [q, p],
+        [ca.vertcat(end_linear, end_angular)],
+        ["q", "p"],
+        ["J"],
+    )
+    tool_offset = ca.MX.sym("tool_offset", 3)
+    tool_position = end_transform[:3, 3] + end_transform[:3, :3] @ tool_offset
+    tool_jacobian = ca.jacobian(tool_position, q)
+    tool_velocity = tool_jacobian @ dq
+    tool_bias = ca.jtimes(tool_velocity, q, dq)
+    tool_point_function = ca.Function(
+        "softarm_tool_point_jet",
+        [q, dq, tool_offset, p],
+        [tool_position, tool_jacobian, tool_bias, tool_velocity],
+        ["q", "dq", "tool_offset", "p"],
+        ["position", "jacobian", "velocity_bias", "velocity"],
+    )
+    vehicle_map = ca.MX.zeros(nq, 6)
+    if nbase:
+        base_position = base_function(q, p)[:3, 3]
+        base_linear = ca.jacobian(base_position, q)
+        base_reference_derivatives = [ca.MX.zeros(4, 4) for _ in range(narm)]
+        base_angular = angular_jacobian(
+            base_function(q, p)[:3, :3], base_reference_derivatives
+        )
+        vehicle_map = ca.vertcat(base_linear, base_angular).T @ ca.diagcat(
+            base_rotation, base_rotation
+        )
+    vehicle_map_function = ca.Function(
+        "softarm_vehicle_wrench_map",
+        [q, p],
+        [vehicle_map],
+        ["q", "p"],
+        ["Bv"],
+    )
+    core = {
+        "inverse_dynamics": inverse_function,
+        "mass": mass_function,
+        "bias": bias_function,
+        "kinematics": kinematics_function,
+        "centerline_at": centerline_function,
+        "end_jacobian": end_jacobian_function,
+        "tool_point_jet": tool_point_function,
+        "vehicle_wrench_map": vehicle_map_function,
+    }
+    if actuation is not None:
+        core.update({
+            "actuator_coordinates": _sympy_function(
+                "softarm_actuator_coordinates",
+                [("q", plant.q), ("p", p_symbols)],
+                [("y", actuation.coordinates)],
+                affine_terms,
+            ),
+            "actuator_jacobian": _sympy_function(
+                "softarm_actuator_jacobian",
+                [("q", plant.q), ("p", p_symbols)],
+                [("Ja", actuation.jacobian)],
+                affine_terms,
+            ),
+            "actuator_velocity_bias": _sympy_function(
+                "softarm_actuator_velocity_bias",
+                [("q", plant.q), ("dq", plant.dq), ("p", p_symbols)],
+                [("gamma", actuation.velocity_bias)],
+                affine_terms,
+            ),
+        })
+    return core
+
+
 def _recursive_core(
     plant: RecursivePlant,
     actuation: ActuationModel | None,
     parameters: tuple[RuntimeParameter, ...],
     affine_terms: int | None,
 ) -> dict[str, Any]:
+    if plant.definition.linear_kinematics:
+        return _recursive_affine_core(plant, actuation, parameters, affine_terms)
     ca = _import_casadi()
     definition = plant.definition
     nq = len(plant.q)
@@ -865,6 +1339,18 @@ def _recursive_core(
         ["q", "p"],
         ["J"],
     )
+    tool_offset_mx = ca.MX.sym("tool_offset", 3)
+    tool_position = end_position_world + end_rotation_world @ tool_offset_mx
+    tool_jacobian = ca.jacobian(tool_position, q_mx)
+    tool_velocity = tool_jacobian @ dq_mx
+    tool_velocity_bias = ca.jtimes(tool_velocity, q_mx, dq_mx)
+    tool_point_function = ca.Function(
+        "softarm_tool_point_jet",
+        [q_mx, dq_mx, tool_offset_mx, p_mx],
+        [tool_position, tool_jacobian, tool_velocity_bias, tool_velocity],
+        ["q", "dq", "tool_offset", "p"],
+        ["position", "jacobian", "velocity_bias", "velocity"],
+    )
 
     core = {
         "inverse_dynamics": inverse_function,
@@ -873,6 +1359,7 @@ def _recursive_core(
         "kinematics": kinematics_function,
         "centerline_at": centerline_function,
         "end_jacobian": end_jacobian_function,
+        "tool_point_jet": tool_point_function,
         "vehicle_wrench_map": vehicle_map_function,
     }
     if actuation is not None:
@@ -927,7 +1414,7 @@ def _dynamics_functions(
     plant: PlantModel,
     core: dict[str, Any],
     actuation: ActuationModel | None,
-    constraint: ConstraintModel | None,
+    constraint: ConstraintModel | ConstraintDefinition | None,
     parameter_count: int,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     ca = _import_casadi()
@@ -1186,9 +1673,11 @@ def _write_model_document(
     plant: PlantModel,
     target: Path,
     actuation: ActuationModel | None,
-    constraint: ConstraintModel | None,
+    constraint: ConstraintModel | ConstraintDefinition | None,
 ) -> None:
     if isinstance(plant, SymbolicPlant):
+        if constraint is not None and not isinstance(constraint, ConstraintModel):
+            raise TypeError("symbolic plant requires a materialized ConstraintModel")
         from .latex import generate_latex_document
 
         generate_latex_document(
@@ -1199,14 +1688,29 @@ def _write_model_document(
             include_appendix=False,
         )
         return
+    if plant.definition.linear_kinematics:
+        algorithm = (
+            "The displacement-Ritz model propagates a global first-order affine "
+            "transform jet while retaining the full nonlinear floating-base "
+            "transform and base--arm mixed terms. Arm--arm coordinate products are "
+            "discarded. Distributed mass, inertia, gravity, elasticity, and damping "
+            "are assembled by fixed Gauss quadrature and CasADi algorithmic "
+            "differentiation. Explicit dynamics solves the resulting linear system "
+            "without forming an inverse.\n"
+        )
+    else:
+        algorithm = (
+            "The Exact-SE(3) model evaluates recursive inverse dynamics directly "
+            "in the implicit residual. Explicit forward dynamics obtains the mass "
+            "matrix by algorithmic differentiation with respect to generalized "
+            "acceleration and solves the resulting linear system without forming "
+            "an inverse.\n"
+        )
     (target / "softarm_model.tex").write_text(
         "\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\n"
         "\\section*{Recursive Soft-Arm Dynamics}\n"
-        "The CasADi model evaluates recursive inverse dynamics directly in the "
-        "implicit residual. Explicit forward dynamics obtains the mass matrix "
-        "by algorithmic differentiation with respect to generalized acceleration "
-        "and solves the resulting linear system without forming an inverse.\n"
-        "\\end{document}\n",
+        + algorithm
+        + "\\end{document}\n",
         encoding="utf-8",
     )
 
@@ -1215,11 +1719,11 @@ def generate_casadi_bundle(
     plant: PlantModel,
     output: str | Path,
     actuation: ActuationModel | None = None,
-    constraint: ConstraintModel | None = None,
+    constraint: ConstraintModel | ConstraintDefinition | ConstraintConfig | None = None,
     *,
     affine_terms: int | None = None,
 ) -> Path:
-    """Generate serialized CasADi Functions from the canonical SymPy model."""
+    """Generate CasADi Functions from canonical local formulas and model metadata."""
     ca = _import_casadi()
     if affine_terms is not None and not 1 <= affine_terms <= 256:
         raise ValueError("affine_terms must lie in [1, 256]")
@@ -1227,9 +1731,12 @@ def generate_casadi_bundle(
         raise ValueError("PAC CasADi export requires --casadi-affine-terms")
     if plant.config.parameterization != "pac" and affine_terms is not None:
         raise ValueError("--casadi-affine-terms is only valid for PAC models")
-    if isinstance(plant, RecursivePlant) and constraint is not None:
-        raise ValueError("recursive dynamics do not support constraints")
-
+    if isinstance(constraint, ConstraintConfig):
+        constraint = (
+            derive_constraint_definition(constraint)
+            if isinstance(plant, RecursivePlant)
+            else derive_constraint(plant, constraint)
+        )
     target = Path(output).resolve()
     function_dir = target / "functions"
     function_dir.mkdir(parents=True, exist_ok=True)
@@ -1237,12 +1744,20 @@ def generate_casadi_bundle(
         stale.unlink()
     parameters = _runtime_parameters(plant, actuation, constraint)
     if isinstance(plant, SymbolicPlant):
+        if constraint is not None and not isinstance(constraint, ConstraintModel):
+            raise TypeError("symbolic plant requires a materialized ConstraintModel")
         core = _symbolic_core(
             plant, actuation, constraint, parameters, affine_terms
         )
         dynamics_formulation = "symbolic_lagrange"
     elif isinstance(plant, RecursivePlant):
+        if constraint is not None and not isinstance(constraint, ConstraintDefinition):
+            raise TypeError("recursive plant requires a ConstraintDefinition")
         core = _recursive_core(plant, actuation, parameters, affine_terms)
+        if constraint is not None:
+            _recursive_constraint_core(
+                plant, core, constraint, parameters, affine_terms
+            )
         dynamics_formulation = "recursive"
     else:
         raise TypeError("unsupported plant representation")
