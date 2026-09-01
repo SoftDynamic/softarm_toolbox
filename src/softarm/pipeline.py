@@ -9,6 +9,7 @@ from typing import Literal
 
 from .actuation import ActuationModel, derive_actuation
 from .backends.wolfram import WolframError, WolframKernel
+from .codegen.casadi import generate_casadi_bundle
 from .codegen.matlab import generate_matlab_bundle
 from .codegen.optimization import FunctionOptimizer, SympyCse
 from .config import ModelConfig
@@ -28,8 +29,12 @@ class BuildOptions:
     wolfram_factor_terms: bool = False
     tex_appendix: bool = False
     verbose: bool = False
+    target: Literal["matlab", "casadi"] = "matlab"
+    casadi_affine_terms: int | None = None
 
     def __post_init__(self) -> None:
+        if self.target not in {"matlab", "casadi"}:
+            raise ValueError(f"unknown code generation target: {self.target}")
         if self.backend not in {"sympy", "wolfram"}:
             raise ValueError(f"unknown symbolic backend: {self.backend}")
         if self.wolfram_timeout <= 0:
@@ -44,6 +49,15 @@ class BuildOptions:
             raise ValueError(
                 "Wolfram options require backend='wolfram'"
             )
+        if self.target == "casadi" and (
+            self.wolfram_cse or self.wolfram_factor_terms or self.tex_appendix
+        ):
+            raise ValueError(
+                "CasADi target does not support --wolfram-cse, "
+                "--wolfram-factor-terms, or --tex-appendix"
+            )
+        if self.casadi_affine_terms is not None and self.target != "casadi":
+            raise ValueError("casadi_affine_terms requires target='casadi'")
 
 
 @dataclass(frozen=True)
@@ -126,6 +140,18 @@ def _materialize_and_generate(
     diagnostics: BuildDiagnostics | None,
 ) -> Path:
     if isinstance(system.plant, RecursivePlant):
+        if options.target == "casadi":
+            try:
+                with _timed_stage(diagnostics, "CasADi recursive generation"):
+                    return generate_casadi_bundle(
+                        system.plant,
+                        output,
+                        actuation=system.actuation,
+                        constraint=None,
+                        affine_terms=options.casadi_affine_terms,
+                    )
+            except Exception as error:
+                raise BuildError("code generation", "recursive + CasADi", error) from error
         optimizer = FunctionOptimizer(
             eliminator=SympyCse(),
             collect_diagnostics=diagnostics is not None,
@@ -158,6 +184,18 @@ def _materialize_and_generate(
     plant = replace(system.plant, _bias=bias)
     if diagnostics is not None:
         diagnostics.capture_plant(plant)
+    if options.target == "casadi":
+        try:
+            with _timed_stage(diagnostics, "CasADi generation"):
+                return generate_casadi_bundle(
+                    plant,
+                    output,
+                    actuation=system.actuation,
+                    constraint=system.constraint,
+                    affine_terms=options.casadi_affine_terms,
+                )
+        except Exception as error:
+            raise BuildError("code generation", "CasADi", error) from error
     normalizer = kernel if options.wolfram_factor_terms else None
     eliminator = kernel if options.wolfram_cse else SympyCse()
     optimizer = FunctionOptimizer(

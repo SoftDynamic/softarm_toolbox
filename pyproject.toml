@@ -5,16 +5,17 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "softarm-toolbox"
 version = "0.2.0"
-description = "SymPy-first continuum robot modelling and MATLAB/Simulink code generation"
+description = "SymPy-first continuum robot modelling and MATLAB/Simulink/CasADi code generation"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = ["sympy==1.14.0"]
 
 [project.optional-dependencies]
+casadi = ["casadi==3.7.2"]
 wolfram = ["wolframclient==1.4.0"]
 
 [dependency-groups]
-dev = ["numpy==2.5.1", "pytest==9.1.1", "ruff==0.16.1"]
+dev = ["casadi==3.7.2", "numpy==2.5.1", "pytest==9.1.1", "ruff==0.16.1"]
 
 [project.scripts]
 softarm = "softarm.cli:main"

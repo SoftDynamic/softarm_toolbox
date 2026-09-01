@@ -144,9 +144,14 @@ class BuildDiagnostics:
                 for item in self.optimizer.rendered_functions
             )
         if self.output.is_dir():
+            iterator = (
+                self.output.rglob("*")
+                if self.options.target == "casadi"
+                else self.output.iterdir()
+            )
             files = tuple(sorted(
-                (path for path in self.output.iterdir() if path.is_file()),
-                key=lambda path: path.name,
+                (path for path in iterator if path.is_file()),
+                key=lambda path: path.as_posix(),
             ))
             counts: dict[str, int] = {}
             sizes: dict[str, int] = {}
@@ -189,7 +194,7 @@ class BuildDiagnostics:
             lines.append(_setting("Source file", self.config.source.resolve()))
         lines.extend([
             _setting("Output directory", self.output),
-            _setting("Target", "MATLAB"),
+            _setting("Target", self.options.target.upper()),
             _setting("TeX appendix", "enabled" if self.options.tex_appendix else "disabled"),
             "",
             "Model",
@@ -317,7 +322,15 @@ class BuildDiagnostics:
             "Wolfram FactorTerms (enabled)"
             if self.options.wolfram_factor_terms else "disabled"
         )
-        cse = "Wolfram experimental CSE" if self.options.wolfram_cse else "SymPy CSE"
+        cse = (
+            "CasADi SX kernels and MX composition"
+            if self.options.target == "casadi"
+            else (
+                "Wolfram experimental CSE"
+                if self.options.wolfram_cse
+                else "SymPy CSE"
+            )
+        )
         strategy_width = 32
         lines.extend([
             _setting("Model construction", f"SymPy {sp.__version__}", width=strategy_width),
@@ -488,7 +501,12 @@ class BuildDiagnostics:
         metrics = self.artifact_metrics
         _section(lines, "Generated Artifacts")
         lines.extend(["Bundle directory", f"  {self.output}", "", "Contents"])
-        labels = ((".m", "MATLAB files"), (".json", "JSON files"), (".tex", "TeX files"))
+        labels = (
+            (".m", "MATLAB files"),
+            (".casadi", "CasADi functions"),
+            (".json", "JSON files"),
+            (".tex", "TeX files"),
+        )
         for suffix, label in labels:
             count = metrics.counts.get(suffix, 0)
             size = metrics.sizes.get(suffix, 0)
@@ -502,29 +520,47 @@ class BuildDiagnostics:
             indent=2,
         ))
         names = {path.name for path in metrics.files}
+        casadi = self.options.target == "casadi"
         lines.extend([
             "",
             "Optional outputs",
             _setting(
                 "Centerline functions",
-                "generated" if "softarm_centerline.m" in names else "not generated",
+                "generated"
+                if (
+                    "softarm_centerline.m" in names
+                    or "core_centerline_at.casadi" in names
+                )
+                else "not generated",
                 indent=2,
             ),
             _setting(
                 "Actuator functions",
-                "generated" if any(name.startswith("softarm_actuator_") for name in names)
+                "generated"
+                if any(
+                    name.startswith("softarm_actuator_")
+                    or name.startswith("core_actuator_")
+                    for name in names
+                )
                 else "not applicable",
                 indent=2,
             ),
             _setting(
                 "Constraint functions",
-                "generated" if any(name.startswith("softarm_constraint_") for name in names)
+                "generated"
+                if any(
+                    name.startswith("softarm_constraint_")
+                    or name.startswith("core_constraint_")
+                    for name in names
+                )
                 else "not applicable",
                 indent=2,
             ),
             _setting(
                 "Exact TeX appendix",
-                "generated" if self.options.tex_appendix else "not requested",
+                "not applicable"
+                if casadi
+                else ("generated" if self.options.tex_appendix else "not requested"),
                 indent=2,
             ),
         ])
@@ -533,4 +569,8 @@ class BuildDiagnostics:
         _section(lines, "Build Result")
         lines.append("SUCCESS" if success else "FAILED")
         if success:
-            lines.extend(["", "Generated MATLAB bundle:", f"  {self.output}"])
+            lines.extend([
+                "",
+                f"Generated {self.options.target.upper()} bundle:",
+                f"  {self.output}",
+            ])

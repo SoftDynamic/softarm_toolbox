@@ -1,6 +1,8 @@
 """SymPy-first continuum robot modelling toolbox."""
 
 from .actuation import ActuationModel, derive_actuation, register_actuator
+from .casadi_bundle import CasadiBundle, load_casadi_bundle
+from .codegen.casadi import generate_casadi_bundle
 from .config import (
     ActuationConfig,
     BaseConfig,
@@ -32,6 +34,7 @@ from .recursive import (
 __all__ = [
     "ActuationConfig",
     "ActuationModel",
+    "CasadiBundle",
     "BaseConfig",
     "ConstraintConfig",
     "ConstraintModel",
@@ -60,7 +63,9 @@ __all__ = [
     "derive_system",
     "derive_actuation",
     "derive_constraint",
+    "generate_casadi_bundle",
     "load_config",
+    "load_casadi_bundle",
     "register_model",
     "register_actuator",
     "register_constraint",

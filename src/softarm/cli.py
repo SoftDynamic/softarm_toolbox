@@ -20,7 +20,7 @@ def _parser() -> argparse.ArgumentParser:
     build = commands.add_parser("build", help="derive a model and generate numerical code")
     build.add_argument("config")
     build.add_argument("--backend", choices=("sympy", "wolfram"), default="sympy")
-    build.add_argument("--target", choices=("matlab",), default="matlab")
+    build.add_argument("--target", choices=("matlab", "casadi"), default="matlab")
     build.add_argument("--out", required=True)
     build.add_argument(
         "--verbose",
@@ -47,6 +47,11 @@ def _parser() -> argparse.ArgumentParser:
         "--tex-appendix",
         action="store_true",
         help="append CAS-optimized exact symbolic expressions to softarm_model.tex",
+    )
+    build.add_argument(
+        "--casadi-affine-terms",
+        type=int,
+        help="fixed affine-moment series length (required for PAC CasADi export)",
     )
     validate = commands.add_parser("validate", help="validate a model configuration")
     validate.add_argument("config")
@@ -111,6 +116,7 @@ def main(argv: list[str] | None = None) -> int:
                 "--wolfram-factor-terms require --backend wolfram"
             )
         options = BuildOptions(
+            target=args.target,
             backend=args.backend,
             wolfram_kernel=args.wolfram_kernel,
             wolfram_timeout=(
@@ -119,6 +125,7 @@ def main(argv: list[str] | None = None) -> int:
             wolfram_cse=args.wolfram_cse,
             wolfram_factor_terms=args.wolfram_factor_terms,
             tex_appendix=args.tex_appendix,
+            casadi_affine_terms=args.casadi_affine_terms,
             verbose=args.verbose,
         )
         config = load_config(args.config)

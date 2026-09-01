@@ -442,7 +442,61 @@ softarm_state_rhs(x,tau_arm,w_vehicle,w_tip,p)
 `symbolic_lagrange` 配置包含约束时还会生成 `softarm_constraint_*` 函数。
 递推构建遇到 `[constraint]` 会直接报错。
 
-### 4.3 LaTeX 数学手册
+### 4.3 CasADi bundle
+
+安装可选依赖并从同一 SymPy 模型生成 CasADi bundle：
+
+```shell
+uv sync --locked --extra casadi
+uv run --locked softarm build examples/config/euler_bernoulli_pcs_n2.toml \
+  --target casadi \
+  --out build/euler_casadi
+```
+
+生成目录包含 `manifest.json`、`functions/*.casadi` 和普通数学手册
+`softarm_model.tex`。载入接口不会依赖 acados：
+
+```python
+import casadi as ca
+from softarm import load_casadi_bundle
+
+bundle = load_casadi_bundle("build/euler_casadi")
+f_expl = bundle.function("dynamics.generalized_force.explicit")
+
+x = ca.MX.sym("x", f_expl.size1_in("x"))
+u = ca.MX.sym("u", f_expl.size1_in("u"))
+p = ca.MX.sym("p", f_expl.size1_in("p"))
+expression = f_expl(x, u, p)
+```
+
+该表达式可由上层代码赋给 `AcadosModel.f_expl_expr`。每个适用的动力学变体
+同时提供 `explicit` 和 `implicit` Function；具体 `x`、`xdot`、`u`、`z` 分块及
+函数逻辑名称记录在 `manifest.dynamics`：
+
+- `generalized_force`：软臂广义力、机体系基座扳手和世界系末端扳手。
+- `tendon_force`：绳索张力、外部软臂广义力和两个外部扳手。
+- `strict_tendon_acceleration`：严格绳坐标加速度；隐式形式以张力为代数量。
+- `active_constraint`：已激活加速度约束；隐式形式以约束反力为代数量。
+
+显式动力学使用 CasADi `solve` 求解质量矩阵或完整 KKT 系统。递推动力学的
+隐式形式直接使用逆动力学残差，不构造质量矩阵；显式形式通过对逆动力学关于
+广义加速度的 Jacobian 得到质量矩阵。
+
+PAC 中的仿射相位矩使用固定长度、可自动微分的级数递推。构建 PAC CasADi
+bundle 时必须显式指定 1 到 256 之间的项数，且该值会写入 manifest：
+
+```shell
+uv run --locked softarm build examples/config/euler_bernoulli_pac_distributed_n2.toml \
+  --target casadi \
+  --casadi-affine-terms 256 \
+  --out build/pac_casadi
+```
+
+CasADi target 不接受 `--wolfram-cse`、`--wolfram-factor-terms` 或
+`--tex-appendix`。单边张力和接触可行性应由上层优化约束表达，动力学 Function
+本身不插入布尔断言。
+
+### 4.4 LaTeX 数学手册
 
 每次构建均生成 `softarm_model.tex`。`symbolic_lagrange` 文档依次给出模型摘要、
 符号与参数、运动学、能量与动力学、执行器和约束，并与同一生成包中的数值函数
